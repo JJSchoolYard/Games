@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2f2230">
+  <meta name="description" content="단어를 조립하고 얼음을 깨며 영어를 익히는 Wordtopia 미니게임 아케이드">
+  <title>Wordtopia Arcade</title>
+  <style>
+    :root {
+      --ink: #3b2b3a;
+      --ink-soft: #725d6c;
+      --paper: #fbf3e4;
+      --paper-deep: #ead6b5;
+      --coral: #ff796c;
+      --butter: #ffd05e;
+      --mint: #6fd9c0;
+      --sky: #78c7ed;
+      --ice: #d9f4ff;
+      --grape: #9a83d4;
+      --shadow: 0 8px 0 var(--ink), 0 22px 42px rgba(39, 25, 39, .16);
+    }
+
+    * { box-sizing: border-box; }
+
+    html { min-width: 320px; min-height: 100%; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      min-height: 100svh;
+      color: var(--ink);
+      overflow-x: hidden;
+      font-family: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, -apple-system, sans-serif;
+      background:
+        radial-gradient(circle at 12% 18%, rgba(255, 208, 94, .34) 0 4px, transparent 5px),
+        radial-gradient(circle at 87% 23%, rgba(111, 217, 192, .32) 0 5px, transparent 6px),
+        radial-gradient(circle at 8% 82%, rgba(255, 121, 108, .25) 0 3px, transparent 4px),
+        radial-gradient(circle at 91% 78%, rgba(120, 199, 237, .32) 0 4px, transparent 5px),
+        linear-gradient(145deg, #fff9ed 0%, #f6e7ce 48%, #ead4b3 100%);
+    }
+
+    body::before,
+    body::after {
+      position: fixed;
+      z-index: -1;
+      content: "";
+      width: 34vw;
+      height: 34vw;
+      min-width: 270px;
+      min-height: 270px;
+      border: 4px solid rgba(59, 43, 58, .09);
+      border-radius: 42% 58% 63% 37%;
+      pointer-events: none;
+    }
+
+    body::before { top: -17vw; left: -12vw; transform: rotate(22deg); }
+    body::after { right: -15vw; bottom: -19vw; transform: rotate(-19deg); }
+
+    a { color: inherit; }
+
+    .shell {
+      width: min(1160px, calc(100% - 32px));
+      min-height: 100vh;
+      min-height: 100svh;
+      margin: 0 auto;
+      padding: clamp(30px, 6vh, 72px) 0 28px;
+      display: grid;
+      align-content: center;
+      gap: clamp(28px, 5vh, 52px);
+    }
+
+    .hero { text-align: center; }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 13px;
+      padding: 8px 14px;
+      border: 2px solid var(--ink);
+      border-radius: 999px;
+      background: rgba(251, 243, 228, .8);
+      box-shadow: 0 3px 0 var(--ink);
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: .17em;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 9px;
+      height: 9px;
+      border: 2px solid var(--ink);
+      border-radius: 50%;
+      background: var(--coral);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(42px, 8vw, 88px);
+      line-height: .88;
+      letter-spacing: -.07em;
+      text-transform: uppercase;
+      text-shadow: 0 5px 0 #fff5dd;
+    }
+
+    h1 span { color: var(--coral); }
+
+    .lead {
+      margin: 19px auto 0;
+      color: var(--ink-soft);
+      font-size: clamp(16px, 2vw, 20px);
+      font-weight: 750;
+      line-height: 1.6;
+      word-break: keep-all;
+    }
+
+    .games {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: clamp(20px, 3vw, 34px);
+    }
+
+    .game-card {
+      --accent: var(--coral);
+      --accent-two: var(--butter);
+      position: relative;
+      min-height: 388px;
+      padding: clamp(24px, 3.5vw, 40px);
+      overflow: hidden;
+      border: 4px solid var(--ink);
+      border-radius: 34px;
+      background: var(--paper);
+      box-shadow: var(--shadow);
+      text-decoration: none;
+      isolation: isolate;
+      transition: transform .2s cubic-bezier(.2, .9, .3, 1.35), box-shadow .2s ease;
+    }
+
+    .game-card:hover,
+    .game-card:focus-visible {
+      transform: translateY(-8px) rotate(-.4deg);
+      box-shadow: 0 13px 0 var(--ink), 0 28px 54px rgba(39, 25, 39, .21);
+      outline: none;
+    }
+
+    .game-card:active {
+      transform: translateY(4px);
+      box-shadow: 0 4px 0 var(--ink), 0 12px 22px rgba(39, 25, 39, .16);
+    }
+
+    .game-card::before {
+      position: absolute;
+      z-index: -2;
+      inset: 0;
+      content: "";
+      background: radial-gradient(circle at 82% 17%, var(--accent-two), transparent 31%);
+      opacity: .72;
+    }
+
+    .game-card::after {
+      position: absolute;
+      z-index: -1;
+      right: -86px;
+      bottom: -105px;
+      width: 290px;
+      height: 290px;
+      content: "";
+      border: 4px solid var(--ink);
+      border-radius: 46% 54% 37% 63%;
+      background: var(--accent);
+      transform: rotate(18deg);
+      opacity: .97;
+    }
+
+    .game-card.ice {
+      --accent: var(--sky);
+      --accent-two: var(--ice);
+    }
+
+    .game-card.pick {
+      --accent: var(--mint);
+      --accent-two: var(--butter);
+    }
+
+    .game-card.redlight {
+      --accent: var(--grape);
+      --accent-two: var(--coral);
+    }
+
+    /* Red Light 카드 아트 — 신호등 */
+    .lampart {
+      position: absolute;
+      inset: 14px 40px 30px;
+      border: 6px solid var(--ink);
+      border-radius: 20px;
+      background: #4a3a48;
+      display: grid;
+      grid-template-rows: 1fr 1fr;
+      gap: 8px;
+      padding: 12px;
+    }
+
+    .lampart::before,
+    .lampart::after {
+      content: "";
+      border: 4px solid var(--ink);
+      border-radius: 50%;
+      align-self: center;
+      justify-self: center;
+      width: 42px;
+      height: 42px;
+    }
+
+    .lampart::before {
+      background: #ff4a3d;
+      box-shadow: 0 0 16px #ff5a4a;
+    }
+
+    .lampart::after {
+      background: #2e4030;
+    }
+
+    /* Pick One 카드 아트 — 풍선 */
+    .balloonart {
+      position: absolute;
+      inset: 16px 34px 44px;
+      border: 8px solid var(--ink);
+      border-radius: 50% 50% 46% 54%;
+      background:
+        radial-gradient(circle at 32% 26%, #fff6 0 26%, transparent 27%),
+        var(--coral);
+      box-shadow: 0 10px 0 rgba(59, 43, 58, .16);
+    }
+
+    .balloonart::after {
+      position: absolute;
+      bottom: -37px;
+      left: 50%;
+      width: 4px;
+      height: 34px;
+      content: "";
+      background: var(--ink);
+      transform: translateX(-50%) rotate(6deg);
+      border-radius: 3px;
+    }
+
+    .number {
+      display: inline-grid;
+      place-items: center;
+      width: 44px;
+      height: 44px;
+      border: 3px solid var(--ink);
+      border-radius: 14px;
+      background: var(--accent-two);
+      box-shadow: 0 4px 0 var(--ink);
+      font-size: 14px;
+      font-weight: 950;
+    }
+
+    .art {
+      position: absolute;
+      z-index: 1;
+      right: 21px;
+      bottom: 20px;
+      width: 154px;
+      height: 154px;
+      pointer-events: none;
+    }
+
+    .target {
+      position: absolute;
+      inset: 13px;
+      border: 9px solid var(--paper);
+      border-radius: 50%;
+      background: var(--coral);
+      box-shadow:
+        0 0 0 8px var(--ink),
+        inset 0 0 0 17px var(--butter),
+        inset 0 0 0 27px var(--ink),
+        inset 0 0 0 39px var(--paper),
+        0 12px 0 rgba(59, 43, 58, .18);
+    }
+
+    .target::after {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 21px;
+      height: 21px;
+      content: "";
+      border: 6px solid var(--ink);
+      border-radius: 50%;
+      background: var(--mint);
+      transform: translate(-50%, -50%);
+    }
+
+    .shard {
+      position: absolute;
+      inset: 15px;
+      border: 7px solid var(--ink);
+      background: linear-gradient(135deg, #f5fdff 8%, #b9ecff 49%, #75c5ed 50%, #dff8ff 83%);
+      clip-path: polygon(50% 0, 67% 24%, 100% 32%, 77% 54%, 85% 91%, 52% 76%, 22% 100%, 24% 64%, 0 47%, 33% 31%);
+      filter: drop-shadow(0 11px 0 rgba(59, 43, 58, .18));
+      transform: rotate(5deg);
+    }
+
+    .tag {
+      display: block;
+      margin-top: 28px;
+      color: var(--ink-soft);
+      font-size: 12px;
+      font-weight: 950;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+
+    h2 {
+      max-width: 75%;
+      margin: 8px 0 0;
+      font-size: clamp(32px, 4.5vw, 53px);
+      line-height: .95;
+      letter-spacing: -.055em;
+      text-transform: uppercase;
+    }
+
+    .desc {
+      max-width: 58%;
+      min-height: 50px;
+      margin: 18px 0 24px;
+      color: var(--ink-soft);
+      font-size: 15px;
+      font-weight: 720;
+      line-height: 1.65;
+      word-break: keep-all;
+    }
+
+    .play {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px 12px 19px;
+      border: 3px solid var(--ink);
+      border-radius: 15px;
+      background: var(--accent-two);
+      box-shadow: 0 4px 0 var(--ink);
+      font-size: 15px;
+      font-weight: 950;
+    }
+
+    .play::after {
+      content: "▶";
+      font-size: 12px;
+      transition: transform .2s ease;
+    }
+
+    .game-card:hover .play::after,
+    .game-card:focus-visible .play::after { transform: translateX(4px); }
+
+    footer {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      color: var(--ink-soft);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    footer::before,
+    footer::after {
+      width: 28px;
+      height: 2px;
+      content: "";
+      background: currentColor;
+      opacity: .35;
+    }
+
+    @media (max-width: 760px) {
+      .shell { padding-top: 30px; align-content: start; }
+      .games { grid-template-columns: 1fr; }
+      .game-card { min-height: 330px; }
+      h2 { max-width: 68%; }
+      .desc { max-width: 61%; }
+      .art { width: 132px; height: 132px; }
+    }
+
+    @media (max-width: 430px) {
+      .shell { width: min(100% - 22px, 1160px); gap: 25px; }
+      .lead br { display: none; }
+      .game-card { min-height: 315px; padding: 24px; border-radius: 27px; }
+      .tag { margin-top: 23px; }
+      h2 { max-width: 76%; font-size: 34px; }
+      .desc { max-width: 64%; margin-top: 13px; font-size: 14px; }
+      .art { right: 10px; bottom: 14px; width: 119px; height: 119px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <p class="eyebrow">WORDTOPIA · MINI ARCADE</p>
+      <h1>Choose your <span>quest!</span></h1>
+      <p class="lead">두근두근 단어 모험이 시작돼요.<br>오늘 도전할 게임을 골라 보세요!</p>
+    </header>
+
+    <section class="games" aria-label="게임 선택">
+      <a class="game-card spell" href="minigame_mg1_spellshot_v0.15.2.html" aria-label="Spellshot 게임 시작">
+        <span class="number" aria-hidden="true">01</span>
+        <span class="tag">Aim · Spell · Win</span>
+        <h2>Spellshot</h2>
+        <p class="desc">총을 들고 날아가는 알파벳을 순서대로 맞혀 단어를 완성해요.</p>
+        <span class="play">게임 시작</span>
+        <span class="art" aria-hidden="true"><span class="target"></span></span>
+      </a>
+
+      <a class="game-card pick" href="minigame_mg2_pickone_v0.7.html" aria-label="Pick One 게임 시작">
+        <span class="number" aria-hidden="true">02</span>
+        <span class="tag">Read · Pick · Pop</span>
+        <h2>Pick One</h2>
+        <p class="desc">단어를 읽고 짝이 맞는 그림 풍선 하나만 골라 터뜨려요.</p>
+        <span class="play">게임 시작</span>
+        <span class="art" aria-hidden="true"><span class="balloonart"></span></span>
+      </a>
+
+      <a class="game-card ice" href="minigame_mg4_icebergbreak_v0.13.html" aria-label="Iceberg Break 게임 시작">
+        <span class="number" aria-hidden="true">03</span>
+        <span class="tag">Read · Find · Break</span>
+        <h2>Iceberg Break</h2>
+        <p class="desc">단어와 짝이 맞는 그림이 든 빙산을 여덟 번 때려 무너뜨려요.</p>
+        <span class="play">게임 시작</span>
+        <span class="art" aria-hidden="true"><span class="shard"></span></span>
+      </a>
+
+      <a class="game-card redlight" href="minigame_mg3_redlight_v0.5.html" aria-label="Red Light 게임 시작">
+        <span class="number" aria-hidden="true">04</span>
+        <span class="tag">Freeze · Read · Survive</span>
+        <h2>Red Light</h2>
+        <p class="desc">무너진 도시에서 알파벳 좀비를 철자 순서대로! 선을 넘어오면 물려요.</p>
+        <span class="play">게임 시작</span>
+        <span class="art" aria-hidden="true"><span class="lampart"></span></span>
+      </a>
+    </section>
+
+    <footer>Learn words through play</footer>
+  </main>
+</body>
+</html>
