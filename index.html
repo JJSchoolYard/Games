@@ -1,659 +1,455 @@
 <!doctype html>
-<!-- proto_wordraid_es_v0.0.html · Status: 검토중
-     Wordborn 전면 개편 검증 프로토타입 — "모르는 단어 첫 만남 5박자 루프" (Spanish)
-     봉인(예고) → 내기(pretest) → 노획(루팅) → 첫 발사(뜻=이펙트) → 재인출(숙련 사다리 Lv0→Lv2)
-     단어 5개: hielo·rayo·viento·piedra·fuego (비동족어·무악센트) -->
-<html lang="es">
+<html lang="ko">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
-<title>Wordraid · Prototipo</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;800&display=swap" rel="stylesheet">
-<style>
-:root{
-  --paper:#f7eeda; --ink:#2b2620; --ink2:#584f43;
-  --c-hielo:#6ec6e8; --c-rayo:#f2c94c; --c-viento:#9fd8a4; --c-piedra:#b09a84; --c-fuego:#f28a5b;
-  --danger:#d96a5a;
-}
-*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
-html,body{height:100%;overflow:hidden;background:#20242e;touch-action:none}
-body{font-family:'Poppins','Segoe UI',system-ui,sans-serif;color:var(--ink)}
-#app{position:relative;max-width:430px;height:100dvh;margin:0 auto;display:flex;flex-direction:column;
-  background:linear-gradient(#b7e0ee 0%,#cfe9dc 46%,#efe6c8 78%,#e8d9b4 100%);overflow:hidden;box-shadow:0 0 40px #0008}
-/* ---------- HUD ---------- */
-#hud{position:relative;z-index:30;display:flex;align-items:center;gap:8px;padding:8px 10px;
-  background:var(--paper);border-bottom:3px solid var(--ink);box-shadow:0 3px 0 #0002}
-#hearts{font-size:19px;letter-spacing:1px;color:#e0574b;text-shadow:0 1px 0 #0003;min-width:74px}
-#scorebox{font-weight:800;font-size:17px;background:#fff8e8;border:2.5px solid var(--ink);border-radius:9px;
-  padding:2px 9px;min-width:86px;text-align:right;box-shadow:0 3px 0 #0002}
-#combo{font-weight:800;font-size:15px;color:#a4551e;opacity:0;transform:scale(.7);transition:.18s;min-width:44px}
-#combo.on{opacity:1;transform:scale(1)}
-#gear{margin-left:auto;font-size:21px;background:#fff8e8;border:2.5px solid var(--ink);border-radius:9px;
-  width:38px;height:34px;line-height:30px;text-align:center;box-shadow:0 3px 0 #0002;cursor:pointer}
-/* ---------- SKY (battlefield) ---------- */
-#sky{position:relative;flex:1;overflow:hidden}
-#bg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-#dangerline{position:absolute;left:0;right:0;bottom:12px;height:0;border-top:3px dashed var(--danger);opacity:.55;pointer-events:none}
-.foe{position:absolute;width:76px;height:84px;margin-left:-38px;cursor:pointer;transition:filter .2s;z-index:5}
-.foe svg{width:100%;height:100%;overflow:visible}
-.foe .hp{position:absolute;left:8px;right:8px;top:-7px;height:7px;background:#fff8e8;border:2px solid var(--ink);border-radius:5px;overflow:hidden}
-.foe .hp i{display:block;height:100%;background:#7ec96f;transition:width .15s}
-.foe.hurt{animation:squash .22s}
-@keyframes squash{40%{transform:scale(1.15,.82)}100%{transform:scale(1,1)}}
-.foe.frozen{filter:saturate(.35) brightness(1.18)}
-.foe.frozen::after{content:'';position:absolute;inset:2px 6px;border-radius:14px;
-  background:linear-gradient(160deg,#bfe9ff99,#e8f9ff55 60%,#bfe9ff88);border:2px solid #9fd9f2;box-shadow:0 0 12px #9fd9f2}
-.foe.burn{filter:sepia(.4) hue-rotate(-18deg) saturate(1.6)}
-.die{animation:die .42s forwards}
-@keyframes die{60%{transform:scale(1.25) rotate(8deg);opacity:1}100%{transform:scale(.1) rotate(-30deg);opacity:0}}
-/* paper puff & particles */
-.puff{position:absolute;pointer-events:none;font-weight:800;z-index:8}
-.shard{position:absolute;width:10px;height:12px;pointer-events:none;z-index:9;
-  clip-path:polygon(0 15%,60% 0,100% 60%,40% 100%);opacity:.95}
-.dmgpop{position:absolute;z-index:12;font-weight:800;font-size:19px;color:#fff;pointer-events:none;
-  -webkit-text-stroke:1.2px var(--ink);animation:dmg .7s forwards}
-@keyframes dmg{0%{transform:translateY(0) scale(.6);opacity:0}25%{opacity:1;transform:translateY(-14px) scale(1.15)}100%{transform:translateY(-46px) scale(1);opacity:0}}
-/* banners */
-#banner{position:absolute;top:26%;left:0;right:0;text-align:center;z-index:25;pointer-events:none;
-  font-size:34px;font-weight:800;color:#fff;-webkit-text-stroke:2px var(--ink);opacity:0}
-#banner.pop{animation:bpop .9s}
-@keyframes bpop{0%{opacity:0;transform:scale(.5) rotate(-4deg)}18%{opacity:1;transform:scale(1.12) rotate(2deg)}70%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1.05)}}
-/* screen shake */
-#app.shake{animation:shake .3s}
-@keyframes shake{20%{transform:translate(-6px,3px)}40%{transform:translate(5px,-4px)}60%{transform:translate(-4px,2px)}80%{transform:translate(3px,-2px)}}
-#app.kick{animation:kick .16s}
-@keyframes kick{40%{transform:translateY(3px) scale(.995)}}
-/* ---------- DOCK (word cards) ---------- */
-#dock{position:relative;z-index:30;display:flex;gap:6px;justify-content:center;padding:6px 8px 4px;
-  background:var(--paper);border-top:3px solid var(--ink)}
-.slot{width:70px;height:86px;border:2.5px dashed #b7a98c;border-radius:10px;background:#efe4c8;
-  display:flex;align-items:center;justify-content:center;color:#b7a98c;font-size:22px;font-weight:800}
-.card{width:70px;height:86px;border:2.5px solid var(--ink);border-radius:10px;background:#fffdf4;position:relative;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;
-  box-shadow:0 3.5px 0 #0003;transition:transform .15s}
-.card:active{transform:scale(.94)}
-.card .pic{width:40px;height:40px}
-.card .wd{font-size:12.5px;font-weight:800;letter-spacing:.3px}
-.card .lv{position:absolute;top:-8px;right:-7px;background:#f2c94c;border:2px solid var(--ink);border-radius:8px;
-  font-size:10.5px;font-weight:800;padding:0 5px;box-shadow:0 2px 0 #0003}
-.card .cd{position:absolute;inset:0;border-radius:8px;background:#2b262085;display:flex;align-items:center;justify-content:center;
-  color:#fff;font-weight:800;font-size:20px}
-.card.ready{animation:breathe 1.6s infinite}
-@keyframes breathe{50%{transform:translateY(-3px)}}
-.card.selected{outline:4px solid #f2c94c;outline-offset:1px}
-.card.lvup{animation:lvup .8s}
-@keyframes lvup{25%{transform:scale(1.22) rotate(-4deg)}55%{transform:scale(1.12) rotate(3deg)}}
-/* ---------- TRAY (letter assembly) ---------- */
-#tray{position:relative;z-index:30;background:var(--paper);padding:6px 8px 12px;display:none;border-top:2px dashed #c9bb9c}
-#tray.on{display:block}
-#buildrow{display:flex;gap:5px;justify-content:center;min-height:40px;margin-bottom:8px;align-items:center}
-.bslot{width:34px;height:38px;border-bottom:3.5px solid var(--ink);display:flex;align-items:center;justify-content:center;
-  font-size:24px;font-weight:800}
-.bslot.fill{animation:tpop .2s}
-@keyframes tpop{40%{transform:scale(1.3)}}
-#tiles{display:flex;gap:7px;justify-content:center;flex-wrap:wrap}
-.tile{width:46px;height:50px;background:#fffdf4;border:2.5px solid var(--ink);border-radius:9px;
-  display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:800;cursor:pointer;
-  box-shadow:0 3.5px 0 #0003;transition:transform .1s}
-.tile:active{transform:scale(.92)}
-.tile.used{opacity:.25;pointer-events:none;transform:scale(.9)}
-.tile.hint{animation:hint .7s infinite;background:#fff3c4;border-color:#c98f1b}
-@keyframes hint{50%{transform:translateY(-5px);box-shadow:0 8px 0 #0002}}
-.tile.bad{animation:bad .3s}
-@keyframes bad{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
-#trayx{position:absolute;right:8px;top:6px;width:30px;height:30px;border:2.5px solid var(--ink);border-radius:8px;
-  background:#fff8e8;text-align:center;line-height:26px;font-weight:800;cursor:pointer;box-shadow:0 2.5px 0 #0002}
-/* ---------- BET / LOOT overlay ---------- */
-#betlayer{position:absolute;inset:0;z-index:40;display:none;align-items:center;justify-content:center;flex-direction:column;background:#2b262066}
-#betlayer.on{display:flex}
-#bigcard{width:150px;height:186px;background:#fffdf4;border:3.5px solid var(--ink);border-radius:16px;position:relative;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;box-shadow:0 8px 0 #0005;transition:transform .3s}
-#bigcard.sealed{background:repeating-linear-gradient(45deg,#8a7d68,#8a7d68 10px,#7d7160 10px,#7d7160 20px)}
-#bigcard.crack{animation:crack .5s}
-@keyframes crack{20%{transform:rotate(-5deg) scale(1.05)}45%{transform:rotate(4deg) scale(1.08)}70%{transform:rotate(-3deg) scale(1.1)}}
-#bigcard.openpop{animation:openpop .55s}
-@keyframes openpop{0%{transform:scale(.6) rotate(-6deg)}55%{transform:scale(1.18) rotate(3deg)}100%{transform:scale(1)}}
-#bigcard .pic{width:74px;height:74px}
-#bigcard .wd{font-size:23px;font-weight:800;letter-spacing:.5px}
-#bigcard .seal{font-size:52px;color:#fff8e8;text-shadow:0 3px 0 #0005}
-#bigcard .rar{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:#9b6fd4;color:#fff;
-  border:2.5px solid var(--ink);border-radius:9px;font-size:11.5px;font-weight:800;padding:1px 9px;white-space:nowrap;box-shadow:0 2px 0 #0004}
-#betq{margin:14px 0 8px;color:#fff;font-weight:800;font-size:19px;-webkit-text-stroke:1px var(--ink);text-align:center}
-#betops{display:flex;gap:12px}
-.betop{width:86px;height:86px;background:#fffdf4;border:3px solid var(--ink);border-radius:14px;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;box-shadow:0 5px 0 #0004;transition:transform .12s}
-.betop:active{transform:scale(.93)}
-.betop .pic{width:56px;height:56px;pointer-events:none}
-.betop.good{background:#dff3d5;border-color:#4c8f3d;animation:tpop .35s}
-.betop.no{opacity:.35}
-#betring{width:120px;height:9px;background:#fff8e8;border:2px solid var(--ink);border-radius:6px;margin-top:14px;overflow:hidden}
-#betring i{display:block;height:100%;background:#f2c94c;width:100%}
-/* ---------- TITLE / RESULTS ---------- */
-.screen{position:absolute;inset:0;z-index:50;display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;
-  background:linear-gradient(#b7e0ee,#efe6c8)}
-.screen.on{display:flex}
-.h1{font-size:38px;font-weight:800;-webkit-text-stroke:0;color:var(--ink);text-shadow:0 3px 0 #0002}
-.sub{font-size:15px;color:var(--ink2);font-weight:600;text-align:center;line-height:1.5;padding:0 26px}
-.bigbtn{font-family:inherit;font-size:24px;font-weight:800;background:#f2c94c;border:3.5px solid var(--ink);border-radius:14px;
-  padding:12px 42px;cursor:pointer;box-shadow:0 6px 0 #0004;color:var(--ink)}
-.bigbtn:active{transform:translateY(3px);box-shadow:0 3px 0 #0004}
-#resgrid{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:400px}
-.rescard{width:70px;height:96px;background:#fffdf4;border:2.5px solid var(--ink);border-radius:10px;position:relative;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;box-shadow:0 3px 0 #0003;cursor:pointer}
-.rescard .pic{width:36px;height:36px}
-.rescard .wd{font-size:12px;font-weight:800}
-.rescard .mlv{font-size:10.5px;font-weight:800;color:#a4551e}
-#resstat{font-size:16px;font-weight:700;color:var(--ink2);text-align:center;line-height:1.6}
-/* ---------- SETTINGS ---------- */
-#panel{position:absolute;inset:0;z-index:60;display:none;align-items:center;justify-content:center;background:#2b262088}
-#panel.on{display:flex}
-#panelbox{width:320px;background:var(--paper);border:3.5px solid var(--ink);border-radius:16px;padding:18px;box-shadow:0 8px 0 #0005}
-#panelbox h3{margin-bottom:10px}
-#panelbox p{font-size:13px;line-height:1.55;color:var(--ink2);margin-bottom:12px}
-#panelbox .bigbtn{font-size:16px;padding:8px 18px;margin-right:8px}
-/* effects layers */
-.fx{position:absolute;pointer-events:none;z-index:20}
-.boltln{position:absolute;pointer-events:none;z-index:21}
-.flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:22}
-.flash.on{animation:flash .28s}
-@keyframes flash{15%{opacity:.85}100%{opacity:0}}
-.firewave{position:absolute;left:0;right:0;bottom:0;height:38%;pointer-events:none;z-index:19;
-  background:linear-gradient(#f2c94c00,#f28a5bcc 55%,#e0574bee);opacity:0}
-.firewave.on{animation:fwave 1s}
-@keyframes fwave{20%{opacity:1}100%{opacity:0;transform:translateY(-30%)}}
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2f2230">
+  <meta name="description" content="단어를 조립하고 얼음을 깨며 영어를 익히는 Wordtopia 미니게임 아케이드">
+  <title>Wordtopia Arcade</title>
+  <style>
+    :root {
+      --ink: #3b2b3a;
+      --ink-soft: #725d6c;
+      --paper: #fbf3e4;
+      --paper-deep: #ead6b5;
+      --coral: #ff796c;
+      --butter: #ffd05e;
+      --mint: #6fd9c0;
+      --sky: #78c7ed;
+      --ice: #d9f4ff;
+      --grape: #9a83d4;
+      --shadow: 0 8px 0 var(--ink), 0 22px 42px rgba(39, 25, 39, .16);
+    }
+
+    * { box-sizing: border-box; }
+
+    html { min-width: 320px; min-height: 100%; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      min-height: 100svh;
+      color: var(--ink);
+      overflow-x: hidden;
+      font-family: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, -apple-system, sans-serif;
+      background:
+        radial-gradient(circle at 12% 18%, rgba(255, 208, 94, .34) 0 4px, transparent 5px),
+        radial-gradient(circle at 87% 23%, rgba(111, 217, 192, .32) 0 5px, transparent 6px),
+        radial-gradient(circle at 8% 82%, rgba(255, 121, 108, .25) 0 3px, transparent 4px),
+        radial-gradient(circle at 91% 78%, rgba(120, 199, 237, .32) 0 4px, transparent 5px),
+        linear-gradient(145deg, #fff9ed 0%, #f6e7ce 48%, #ead4b3 100%);
+    }
+
+    body::before,
+    body::after {
+      position: fixed;
+      z-index: -1;
+      content: "";
+      width: 34vw;
+      height: 34vw;
+      min-width: 270px;
+      min-height: 270px;
+      border: 4px solid rgba(59, 43, 58, .09);
+      border-radius: 42% 58% 63% 37%;
+      pointer-events: none;
+    }
+
+    body::before { top: -17vw; left: -12vw; transform: rotate(22deg); }
+    body::after { right: -15vw; bottom: -19vw; transform: rotate(-19deg); }
+
+    a { color: inherit; }
+
+    .shell {
+      width: min(1160px, calc(100% - 32px));
+      min-height: 100vh;
+      min-height: 100svh;
+      margin: 0 auto;
+      padding: clamp(30px, 6vh, 72px) 0 28px;
+      display: grid;
+      align-content: center;
+      gap: clamp(28px, 5vh, 52px);
+    }
+
+    .hero { text-align: center; }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 13px;
+      padding: 8px 14px;
+      border: 2px solid var(--ink);
+      border-radius: 999px;
+      background: rgba(251, 243, 228, .8);
+      box-shadow: 0 3px 0 var(--ink);
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: .17em;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 9px;
+      height: 9px;
+      border: 2px solid var(--ink);
+      border-radius: 50%;
+      background: var(--coral);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(42px, 8vw, 88px);
+      line-height: .88;
+      letter-spacing: -.07em;
+      text-transform: uppercase;
+      text-shadow: 0 5px 0 #fff5dd;
+    }
+
+    h1 span { color: var(--coral); }
+
+    .lead {
+      margin: 19px auto 0;
+      color: var(--ink-soft);
+      font-size: clamp(16px, 2vw, 20px);
+      font-weight: 750;
+      line-height: 1.6;
+      word-break: keep-all;
+    }
+
+    .games {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: clamp(20px, 3vw, 34px);
+    }
+
+    .game-card {
+      --accent: var(--coral);
+      --accent-two: var(--butter);
+      position: relative;
+      min-height: 388px;
+      padding: clamp(24px, 3.5vw, 40px);
+      overflow: hidden;
+      border: 4px solid var(--ink);
+      border-radius: 34px;
+      background: var(--paper);
+      box-shadow: var(--shadow);
+      text-decoration: none;
+      isolation: isolate;
+      transition: transform .2s cubic-bezier(.2, .9, .3, 1.35), box-shadow .2s ease;
+    }
+
+    .game-card:hover,
+    .game-card:focus-visible {
+      transform: translateY(-8px) rotate(-.4deg);
+      box-shadow: 0 13px 0 var(--ink), 0 28px 54px rgba(39, 25, 39, .21);
+      outline: none;
+    }
+
+    .game-card:active {
+      transform: translateY(4px);
+      box-shadow: 0 4px 0 var(--ink), 0 12px 22px rgba(39, 25, 39, .16);
+    }
+
+    .game-card::before {
+      position: absolute;
+      z-index: -2;
+      inset: 0;
+      content: "";
+      background: radial-gradient(circle at 82% 17%, var(--accent-two), transparent 31%);
+      opacity: .72;
+    }
+
+    .game-card::after {
+      position: absolute;
+      z-index: -1;
+      right: -86px;
+      bottom: -105px;
+      width: 290px;
+      height: 290px;
+      content: "";
+      border: 4px solid var(--ink);
+      border-radius: 46% 54% 37% 63%;
+      background: var(--accent);
+      transform: rotate(18deg);
+      opacity: .97;
+    }
+
+    .game-card.ice {
+      --accent: var(--sky);
+      --accent-two: var(--ice);
+    }
+
+    .game-card.pick {
+      --accent: var(--mint);
+      --accent-two: var(--butter);
+    }
+
+    .game-card.redlight {
+      --accent: var(--grape);
+      --accent-two: var(--coral);
+    }
+
+    /* Red Light 카드 아트 — 신호등 */
+    .lampart {
+      position: absolute;
+      inset: 14px 40px 30px;
+      border: 6px solid var(--ink);
+      border-radius: 20px;
+      background: #4a3a48;
+      display: grid;
+      grid-template-rows: 1fr 1fr;
+      gap: 8px;
+      padding: 12px;
+    }
+
+    .lampart::before,
+    .lampart::after {
+      content: "";
+      border: 4px solid var(--ink);
+      border-radius: 50%;
+      align-self: center;
+      justify-self: center;
+      width: 42px;
+      height: 42px;
+    }
+
+    .lampart::before {
+      background: #ff4a3d;
+      box-shadow: 0 0 16px #ff5a4a;
+    }
+
+    .lampart::after {
+      background: #2e4030;
+    }
+
+    /* Pick One 카드 아트 — 풍선 */
+    .balloonart {
+      position: absolute;
+      inset: 16px 34px 44px;
+      border: 8px solid var(--ink);
+      border-radius: 50% 50% 46% 54%;
+      background:
+        radial-gradient(circle at 32% 26%, #fff6 0 26%, transparent 27%),
+        var(--coral);
+      box-shadow: 0 10px 0 rgba(59, 43, 58, .16);
+    }
+
+    .balloonart::after {
+      position: absolute;
+      bottom: -37px;
+      left: 50%;
+      width: 4px;
+      height: 34px;
+      content: "";
+      background: var(--ink);
+      transform: translateX(-50%) rotate(6deg);
+      border-radius: 3px;
+    }
+
+    .number {
+      display: inline-grid;
+      place-items: center;
+      width: 44px;
+      height: 44px;
+      border: 3px solid var(--ink);
+      border-radius: 14px;
+      background: var(--accent-two);
+      box-shadow: 0 4px 0 var(--ink);
+      font-size: 14px;
+      font-weight: 950;
+    }
+
+    .art {
+      position: absolute;
+      z-index: 1;
+      right: 21px;
+      bottom: 20px;
+      width: 154px;
+      height: 154px;
+      pointer-events: none;
+    }
+
+    .target {
+      position: absolute;
+      inset: 13px;
+      border: 9px solid var(--paper);
+      border-radius: 50%;
+      background: var(--coral);
+      box-shadow:
+        0 0 0 8px var(--ink),
+        inset 0 0 0 17px var(--butter),
+        inset 0 0 0 27px var(--ink),
+        inset 0 0 0 39px var(--paper),
+        0 12px 0 rgba(59, 43, 58, .18);
+    }
+
+    .target::after {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 21px;
+      height: 21px;
+      content: "";
+      border: 6px solid var(--ink);
+      border-radius: 50%;
+      background: var(--mint);
+      transform: translate(-50%, -50%);
+    }
+
+    .shard {
+      position: absolute;
+      inset: 15px;
+      border: 7px solid var(--ink);
+      background: linear-gradient(135deg, #f5fdff 8%, #b9ecff 49%, #75c5ed 50%, #dff8ff 83%);
+      clip-path: polygon(50% 0, 67% 24%, 100% 32%, 77% 54%, 85% 91%, 52% 76%, 22% 100%, 24% 64%, 0 47%, 33% 31%);
+      filter: drop-shadow(0 11px 0 rgba(59, 43, 58, .18));
+      transform: rotate(5deg);
+    }
+
+    .tag {
+      display: block;
+      margin-top: 28px;
+      color: var(--ink-soft);
+      font-size: 12px;
+      font-weight: 950;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+
+    h2 {
+      max-width: 75%;
+      margin: 8px 0 0;
+      font-size: clamp(32px, 4.5vw, 53px);
+      line-height: .95;
+      letter-spacing: -.055em;
+      text-transform: uppercase;
+    }
+
+    .desc {
+      max-width: 58%;
+      min-height: 50px;
+      margin: 18px 0 24px;
+      color: var(--ink-soft);
+      font-size: 15px;
+      font-weight: 720;
+      line-height: 1.65;
+      word-break: keep-all;
+    }
+
+    .play {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px 12px 19px;
+      border: 3px solid var(--ink);
+      border-radius: 15px;
+      background: var(--accent-two);
+      box-shadow: 0 4px 0 var(--ink);
+      font-size: 15px;
+      font-weight: 950;
+    }
+
+    .play::after {
+      content: "▶";
+      font-size: 12px;
+      transition: transform .2s ease;
+    }
+
+    .game-card:hover .play::after,
+    .game-card:focus-visible .play::after { transform: translateX(4px); }
+
+    footer {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      color: var(--ink-soft);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    footer::before,
+    footer::after {
+      width: 28px;
+      height: 2px;
+      content: "";
+      background: currentColor;
+      opacity: .35;
+    }
+
+    @media (max-width: 760px) {
+      .shell { padding-top: 30px; align-content: start; }
+      .games { grid-template-columns: 1fr; }
+      .game-card { min-height: 330px; }
+      h2 { max-width: 68%; }
+      .desc { max-width: 61%; }
+      .art { width: 132px; height: 132px; }
+    }
+
+    @media (max-width: 430px) {
+      .shell { width: min(100% - 22px, 1160px); gap: 25px; }
+      .lead br { display: none; }
+      .game-card { min-height: 315px; padding: 24px; border-radius: 27px; }
+      .tag { margin-top: 23px; }
+      h2 { max-width: 76%; font-size: 34px; }
+      .desc { max-width: 64%; margin-top: 13px; font-size: 14px; }
+      .art { right: 10px; bottom: 14px; width: 119px; height: 119px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+    }
+  </style>
 </head>
 <body>
-<div id="app">
-  <div id="hud">
-    <span id="hearts">♥♥♥</span>
-    <span id="scorebox">0</span>
-    <span id="combo">×1</span>
-    <span id="gear">⚙</span>
-  </div>
-  <div id="sky">
-    <svg id="bg" viewBox="0 0 430 600" preserveAspectRatio="xMidYMax slice">
-      <ellipse cx="360" cy="70" rx="46" ry="46" fill="#fff3c4" opacity=".9"/>
-      <path d="M-10 470 Q 80 400 180 455 T 440 445 L 440 610 L -10 610 Z" fill="#d9ecc9" opacity=".8"/>
-      <path d="M-10 510 Q 120 455 240 500 T 440 495 L 440 610 L -10 610 Z" fill="#cfe3b4" opacity=".9"/>
-      <path d="M-10 555 Q 150 515 300 548 T 440 545 L 440 610 L -10 610 Z" fill="#c2d8a3"/>
-      <g opacity=".55" fill="#fffdf4">
-        <path d="M60 90 q18 -26 44 -12 q30 -16 44 8 q26 2 18 22 q-58 12 -106 0 q-10 -14 0 -18"/>
-        <path d="M260 150 q14 -20 34 -9 q23 -12 34 6 q20 1 14 17 q-45 9 -82 0 q-8 -11 0 -14"/>
-      </g>
-    </svg>
-    <div id="dangerline"></div>
-    <div id="banner"></div>
-    <div class="flash" id="flash"></div>
-    <div class="firewave" id="firewave"></div>
-  </div>
-  <div id="dock"></div>
-  <div id="tray">
-    <div id="trayx">✕</div>
-    <div id="buildrow"></div>
-    <div id="tiles"></div>
-  </div>
-  <div id="betlayer">
-    <div id="bigcard" class="sealed"><div class="seal">?</div></div>
-    <div id="betq">¿Qué significa?</div>
-    <div id="betops"></div>
-    <div id="betring"><i></i></div>
-  </div>
-  <div id="title" class="screen on">
-    <div class="h1">Wordraid</div>
-    <div class="sub">Prototipo · Español<br>Las palabras son tu única arma.</div>
-    <button class="bigbtn" id="playbtn">¡JUGAR!</button>
-  </div>
-  <div id="results" class="screen">
-    <div class="h1" id="resh">¡Victoria!</div>
-    <div id="resgrid"></div>
-    <div id="resstat"></div>
-    <button class="bigbtn" id="againbtn">Otra vez</button>
-  </div>
-  <div id="panel">
-    <div id="panelbox">
-      <h3>⚙ 제어판</h3>
-      <p>검증 프로토타입이야. 단어 카드를 탭 → 글자를 순서대로 탭해서 주문을 발사해.
-      새 단어는 봉인 카드를 든 운반자를 무찌르면 얻어. 적이 점선을 넘으면 하트 -1.
-      같은 단어를 쓸수록 카드 레벨이 오르고(Lv0 안내 → Lv1 스스로 → Lv2 함정 글자), 위력도 세져.</p>
-      <button class="bigbtn" id="resumebtn">계속</button>
-      <button class="bigbtn" id="restartbtn" style="background:#f28a5b">처음부터</button>
-    </div>
-  </div>
-</div>
-<script>
-'use strict';
-/* ============ utils ============ */
-const $=s=>document.querySelector(s);
-const sky=$('#sky'), app=$('#app');
-const rnd=(a,b)=>a+Math.random()*(b-a);
-const ri=(a,b)=>Math.floor(rnd(a,b+1));
-const shuffle=a=>{for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
-const now=()=>performance.now();
+  <main class="shell">
+    <header class="hero">
+      <p class="eyebrow">WORDTOPIA · MINI ARCADE</p>
+      <h1>Choose your <span>quest!</span></h1>
+      <p class="lead">두근두근 단어 모험이 시작돼요.<br>오늘 도전할 게임을 골라 보세요!</p>
+    </header>
 
-/* ============ SFX (합성만) ============ */
-let AC=null;
-function ac(){if(!AC)AC=new (window.AudioContext||window.webkitAudioContext)();if(AC.state==='suspended')AC.resume();return AC}
-function tone(f,d,type,g,slide){try{const c=ac(),o=c.createOscillator(),v=c.createGain();
- o.type=type||'square';o.frequency.value=f;
- if(slide)o.frequency.exponentialRampToValueAtTime(Math.max(40,f+slide),c.currentTime+d);
- v.gain.setValueAtTime(g||.08,c.currentTime);v.gain.exponentialRampToValueAtTime(.0001,c.currentTime+d);
- o.connect(v);v.connect(c.destination);o.start();o.stop(c.currentTime+d)}catch(e){}}
-const SFX={
- poke(){tone(240,.07,'triangle',.06,-90)},
- tick(){tone(700,.05,'square',.045)},
- wrong(){tone(130,.18,'sawtooth',.07)},
- fire(){tone(300,.22,'sawtooth',.09,320)},
- boom(){tone(90,.4,'sawtooth',.13,-45);tone(58,.5,'square',.1)},
- chime(){tone(880,.12,'sine',.07);setTimeout(()=>tone(1318,.18,'sine',.07),90)},
- loot(){[523,659,784,1046].forEach((f,i)=>setTimeout(()=>tone(f,.14,'triangle',.08),i*90))},
- lvup(){[440,554,659,880].forEach((f,i)=>setTimeout(()=>tone(f,.12,'square',.06),i*70))},
- hurt(){tone(180,.3,'sawtooth',.1,-120)}
-};
+    <section class="games" aria-label="게임 선택">
+      <a class="game-card spell" href="minigame_mg1_spellshot_v0.21.html" aria-label="Spellshot 게임 시작">
+        <span class="number" aria-hidden="true">01</span>
+        <span class="tag">Aim · Spell · Win</span>
+        <h2>Spellshot</h2>
+        <p class="desc">총을 들고 날아가는 알파벳을 순서대로 맞혀 단어를 완성해요.</p>
+        <span class="play">게임 시작</span>
+        <span class="art" aria-hidden="true"><span class="target"></span></span>
+      </a>
 
-/* ============ TTS (es) ============ */
-let esVoice=null;
-function pickVoice(){try{const vs=speechSynthesis.getVoices();
- esVoice=vs.find(v=>/^es[-_](ES|MX|US)/i.test(v.lang))||vs.find(v=>/^es/i.test(v.lang))||null}catch(e){}}
-if('speechSynthesis' in window){pickVoice();speechSynthesis.onvoiceschanged=pickVoice}
-function say(t,rate){try{const u=new SpeechSynthesisUtterance(t);
- u.lang=esVoice?esVoice.lang:'es-ES';if(esVoice)u.voice=esVoice;
- u.rate=rate||.85;u.pitch=1.05;speechSynthesis.cancel();speechSynthesis.speak(u)}catch(e){}}
+      <a class="game-card pick" href="minigame_mg2_pickone_v0.12.html" aria-label="Pick One 게임 시작">
+        <span class="number" aria-hidden="true">02</span>
+        <span class="tag">Read · Pick · Pop</span>
+        <h2>Pick One</h2>
+        <p class="desc">단어를 읽고 짝이 맞는 그림 풍선 하나만 골라 터뜨려요.</p>
+        <span class="play">게임 시작</span>
+        <span class="art" aria-hidden="true"><span class="balloonart"></span></span>
+      </a>
 
-/* ============ 종이컷 아이콘 ============ */
-const IC={
- snow:'<g stroke="#5db6dd" stroke-width="7" stroke-linecap="round"><line x1="50" y1="12" x2="50" y2="88"/><line x1="17" y1="31" x2="83" y2="69"/><line x1="17" y1="69" x2="83" y2="31"/></g><circle cx="50" cy="50" r="10" fill="#cfeefc" stroke="#2b2620" stroke-width="4"/>',
- bolt:'<polygon points="55,6 22,56 44,56 36,94 78,40 54,40" fill="#f2c94c" stroke="#2b2620" stroke-width="4" stroke-linejoin="round"/>',
- wind:'<g fill="none" stroke="#7cbf82" stroke-width="8" stroke-linecap="round"><path d="M14 32 h40 a10 10 0 1 0 -10 -14"/><path d="M10 54 h62 a11 11 0 1 1 -11 15"/><path d="M18 78 h32 a9 9 0 1 0 -9 -12"/></g>',
- rock:'<polygon points="50,12 82,34 88,68 64,90 30,88 12,60 22,28" fill="#b09a84" stroke="#2b2620" stroke-width="4" stroke-linejoin="round"/><path d="M38 40 L56 58 M60 34 L70 48" fill="none" stroke="#8a7663" stroke-width="5" stroke-linecap="round"/>',
- flame:'<path d="M50 8 C62 28 82 40 80 62 A30 30 0 0 1 20 62 C18 44 34 34 38 20 C42 32 50 34 50 8 Z" fill="#f28a5b" stroke="#2b2620" stroke-width="4"/><path d="M50 44 C56 54 66 58 62 70 A14 14 0 0 1 36 68 C36 58 46 54 50 44 Z" fill="#f2c94c"/>',
- sun:'<circle cx="50" cy="50" r="20" fill="#f2c94c" stroke="#2b2620" stroke-width="4"/><g stroke="#e8a13c" stroke-width="6" stroke-linecap="round"><line x1="50" y1="6" x2="50" y2="20"/><line x1="50" y1="80" x2="50" y2="94"/><line x1="6" y1="50" x2="20" y2="50"/><line x1="80" y1="50" x2="94" y2="50"/><line x1="19" y1="19" x2="29" y2="29"/><line x1="71" y1="71" x2="81" y2="81"/><line x1="19" y1="81" x2="29" y2="71"/><line x1="71" y1="29" x2="81" y2="19"/></g>',
- tree:'<rect x="44" y="62" width="12" height="28" rx="3" fill="#8a6642" stroke="#2b2620" stroke-width="4"/><polygon points="50,6 78,44 66,44 84,68 16,68 34,44 22,44" fill="#7cbf82" stroke="#2b2620" stroke-width="4" stroke-linejoin="round"/>',
- star:'<polygon points="50,8 61,38 92,38 67,57 76,88 50,69 24,88 33,57 8,38 39,38" fill="#f2c94c" stroke="#2b2620" stroke-width="4" stroke-linejoin="round"/>',
- cloud:'<g fill="#eef3f6" stroke="#2b2620" stroke-width="4"><ellipse cx="50" cy="64" rx="30" ry="14"/><ellipse cx="38" cy="52" rx="20" ry="15"/><ellipse cx="64" cy="50" rx="17" ry="14"/></g>',
- moon:'<path d="M64 8 A44 44 0 1 0 92 62 A34 34 0 0 1 64 8 Z" fill="#f2e9b8" stroke="#2b2620" stroke-width="4"/>',
- drop:'<path d="M50 8 C64 34 80 48 80 66 A30 30 0 0 1 20 66 C20 48 36 34 50 8 Z" fill="#6ec6e8" stroke="#2b2620" stroke-width="4"/>',
- fish:'<ellipse cx="44" cy="52" rx="28" ry="18" fill="#f2a3b3" stroke="#2b2620" stroke-width="4"/><polygon points="66,52 90,36 90,68" fill="#f2a3b3" stroke="#2b2620" stroke-width="4" stroke-linejoin="round"/><circle cx="32" cy="47" r="4" fill="#2b2620"/>'
-};
-const icon=(n)=>'<svg class="pic" viewBox="0 0 100 100">'+(IC[n]||'')+'</svg>';
+      <a class="game-card ice" href="minigame_mg4_icebergbreak_v0.19.html" aria-label="Iceberg Break 게임 시작">
+        <span class="number" aria-hidden="true">03</span>
+        <span class="tag">Read · Find · Break</span>
+        <h2>Iceberg Break</h2>
+        <p class="desc">단어와 짝이 맞는 그림이 든 빙산을 여덟 번 때려 무너뜨려요.</p>
+        <span class="play">게임 시작</span>
+        <span class="art" aria-hidden="true"><span class="shard"></span></span>
+      </a>
 
-/* ============ 단어 데이터 ============ */
-const WORDS=[
- {w:'hielo', pic:'snow', effect:'freeze', rare:false},
- {w:'rayo',  pic:'bolt', effect:'bolt',  rare:true},
- {w:'viento',pic:'wind', effect:'wind',  rare:false},
- {w:'piedra',pic:'rock', effect:'rock',  rare:true},
- {w:'fuego', pic:'flame',effect:'fire',  rare:false}
-];
-const DECOY_PICS=['sun','tree','star','cloud','moon','drop','fish'];
-const ALPHA='abcdefghijklmnopqrstuvwxyz';
-const CD_MS=8000, BET_MS=4500;
+      <a class="game-card redlight" href="minigame_mg3_redlight_v0.9.2.html" aria-label="Red Light 게임 시작">
+        <span class="number" aria-hidden="true">04</span>
+        <span class="tag">Freeze · Read · Survive</span>
+        <h2>Red Light</h2>
+        <p class="desc">무너진 도시에서 알파벳 좀비를 철자 순서대로! 선을 넘어오면 물려요.</p>
+        <span class="play">게임 시작</span>
+        <span class="art" aria-hidden="true"><span class="lampart"></span></span>
+      </a>
+    </section>
 
-/* ============ 상태 ============ */
-const S={
- phase:'title', hearts:3, score:0, combo:0, lastCast:0, lastWord:-1,
- foes:[], owned:[], wave:-1, paused:false, betOpen:false, asm:null,
- bets:{right:0,total:0}, t0:0, over:false
-};
-window.__P={S,WORDS};   /* 검증 프로브 (프로토 전용) */
-
-/* ============ HUD ============ */
-function hud(){
- $('#hearts').textContent='♥'.repeat(Math.max(0,S.hearts))+'♡'.repeat(Math.max(0,3-S.hearts));
- $('#scorebox').textContent=S.score>=1000?(S.score/1000).toFixed(1)+'K':S.score;
- const c=$('#combo');c.textContent='×'+S.combo;c.classList.toggle('on',S.combo>1);
-}
-function banner(t,ms){const b=$('#banner');b.textContent=t;b.classList.remove('pop');void b.offsetWidth;b.classList.add('pop')}
-function shake(big){app.classList.remove('shake','kick');void app.offsetWidth;app.classList.add(big?'shake':'kick')}
-function addScore(n){S.score+=n*Math.max(1,S.combo);hud()}
-
-/* ============ 적 ============ */
-const FOE_COLS=['#e8a2c8','#a2c8e8','#c8e8a2','#e8c8a2','#c0a2e8'];
-function foeEl(type){
- const d=document.createElement('div');d.className='foe';
- const col=FOE_COLS[ri(0,4)], car=type==='carrier';
- if(car){d.style.width='92px';d.style.height='104px';d.style.marginLeft='-46px'}
- d.innerHTML='<div class="hp"><i style="width:100%"></i></div>'+
- '<svg viewBox="0 0 100 110">'+
- '<path d="M50 6 C78 6 92 30 90 56 C102 66 96 84 84 84 C80 100 64 106 50 104 C36 106 20 100 16 84 C4 84 -2 66 10 56 C8 30 22 6 50 6 Z" fill="'+col+'" stroke="#2b2620" stroke-width="4"/>'+
- '<g class="eye" style="animation-delay:'+rnd(0,3).toFixed(1)+'s"><circle cx="36" cy="44" r="7" fill="#fff"/><circle cx="36" cy="44" r="3.4" fill="#2b2620"/></g>'+
- '<g class="eye" style="animation-delay:'+rnd(0,3).toFixed(1)+'s"><circle cx="64" cy="44" r="7" fill="#fff"/><circle cx="64" cy="44" r="3.4" fill="#2b2620"/></g>'+
- '<path d="M42 62 q8 8 16 0" fill="none" stroke="#2b2620" stroke-width="3.5" stroke-linecap="round"/>'+
- (car?'<g><rect x="28" y="66" width="44" height="34" rx="6" fill="#8a7d68" stroke="#2b2620" stroke-width="3.5"/><text x="50" y="92" text-anchor="middle" font-size="26" font-weight="800" fill="#fff8e8">?</text></g>':'')+
- '</svg>';
- return d;
-}
-function spawnFoe(type,wi,xPct){
- const f={el:foeEl(type),x:xPct!=null?xPct:rnd(16,84),y:-95,
-  hp:type==='carrier'?8:4,max:type==='carrier'?8:4,type,wi:wi==null?-1:wi,
-  speed:type==='carrier'?6.5:rnd(7.5,10.5),frozen:0,burn:0,burnTick:0,dead:false};
- f.el.style.left=f.x+'%';f.el.style.top=f.y+'px';
- f.el.addEventListener('pointerdown',e=>{e.stopPropagation();poke(f)});
- sky.appendChild(f.el);S.foes.push(f);
- return f;
-}
-function hpbar(f){f.el.querySelector('.hp i').style.width=Math.max(0,f.hp/f.max*100)+'%'}
-function dmgPop(f,n){const p=document.createElement('div');p.className='dmgpop';p.textContent=n;
- p.style.left='calc('+f.x+'% - 8px)';p.style.top=(f.y+8)+'px';sky.appendChild(p);setTimeout(()=>p.remove(),720)}
-function shards(x,yPx,col,n){for(let i=0;i<(n||7);i++){const s=document.createElement('div');s.className='shard';
- s.style.background=col;s.style.left='calc('+x+'% + '+ri(-8,8)+'px)';s.style.top=yPx+'px';
- const dx=rnd(-70,70),dy=rnd(-90,-20),rot=ri(-320,320);
- s.animate([{transform:'translate(0,0) rotate(0deg)',opacity:1},
-  {transform:'translate('+dx+'px,'+(dy+120)+'px) rotate('+rot+'deg)',opacity:0}],
-  {duration:rnd(500,850),easing:'cubic-bezier(.2,.7,.4,1)'}).onfinish=()=>s.remove();
- sky.appendChild(s)}}
-function poke(f){
- if(S.paused||S.betOpen||f.dead||S.over)return;
- if(f.frozen>now()){SFX.tick();return}
- damage(f,1,'poke');SFX.poke();shake(false);
-}
-function damage(f,n,src){
- if(f.dead)return;
- f.hp-=n;hpbar(f);dmgPop(f,n);
- f.el.classList.remove('hurt');void f.el.offsetWidth;f.el.classList.add('hurt');
- if(f.hp<=0)kill(f,src); else addScore(2);
-}
-function kill(f,src){
- f.dead=true;
- shards(f.x,f.y+30,'#fffdf4',9);
- f.el.classList.add('die');
- addScore(f.type==='carrier'?60:25);
- setTimeout(()=>f.el.remove(),430);
- S.foes=S.foes.filter(x=>x!==f);
- if(f.type==='carrier'&&f.wi>=0){startBet(f.wi)}
- else SFX.boom();
-}
-
-/* ============ 2박: 내기 (pretest) ============ */
-let betTimer=null,betWi=-1;
-function startBet(wi){
- S.betOpen=true;S.bets.total++;betWi=wi;
- const W=WORDS[wi];
- const bl=$('#betlayer'),bc=$('#bigcard');
- bl.classList.add('on');
- bc.className='sealed';bc.innerHTML='<div class="seal">?</div>';
- bc.classList.add('crack');SFX.chime();
- say(W.w);setTimeout(()=>say(W.w),1300);
- const ops=shuffle([W.pic].concat(shuffle(DECOY_PICS.slice()).slice(0,2)));
- const box=$('#betops');box.innerHTML='';
- ops.forEach(p=>{
-  const o=document.createElement('div');o.className='betop';o.dataset.pic=p;o.innerHTML=icon(p);
-  o.addEventListener('pointerdown',()=>resolveBet(p));
-  box.appendChild(o);
- });
- const ring=$('#betring i');ring.style.transition='none';ring.style.width='100%';
- void ring.offsetWidth;ring.style.transition='width '+BET_MS+'ms linear';ring.style.width='0%';
- betTimer=setTimeout(()=>resolveBet(null),BET_MS);
-}
-function resolveBet(pick){
- if(!S.betOpen)return;clearTimeout(betTimer);
- const W=WORDS[betWi],good=pick===W.pic;
- document.querySelectorAll('.betop').forEach(o=>{
-  if(o.dataset.pic===W.pic)o.classList.add('good');else o.classList.add('no');
-  o.style.pointerEvents='none';
- });
- if(good){S.bets.right++;addScore(150);banner('¡Genial!');SFX.chime()}
- setTimeout(()=>openLoot(betWi),good?750:1050);
-}
-/* ============ 3박: 노획 ============ */
-function openLoot(wi){
- const W=WORDS[wi],bc=$('#bigcard');
- bc.className='';bc.classList.add('openpop');
- bc.innerHTML=(W.rare?'<div class="rar">¡PALABRA RARA!</div>':'')+icon(W.pic)+'<div class="wd">'+W.w+'</div>';
- say(W.w);SFX.loot();
- setTimeout(()=>{
-  $('#betlayer').classList.remove('on');S.betOpen=false;
-  S.owned.push({wi,lv:0,casts:0,cdUntil:0});
-  renderDock();
-  /* 4박 준비: 첫 발사 표적 소환 후 가이드 조립 자동 오픈 */
-  const n=wi===0?2:2;
-  for(let i=0;i<n;i++)spawnFoe('minion',null,25+i*30+rnd(-5,5));
-  setTimeout(()=>openAsm(S.owned.length-1,true),350);
- },1600);
-}
-
-/* ============ 덱 ============ */
-function renderDock(){
- const d=$('#dock');d.innerHTML='';
- for(let i=0;i<5;i++){
-  const o=S.owned[i];
-  if(!o){const s=document.createElement('div');s.className='slot';s.textContent='?';d.appendChild(s);continue}
-  const W=WORDS[o.wi],c=document.createElement('div');c.className='card';c.dataset.oi=i;
-  c.innerHTML='<div class="lv">Lv'+o.lv+'</div>'+icon(W.pic)+
-   (o.lv===0?'<div class="wd">'+W.w+'</div>':'<div class="wd" style="opacity:.25">?????</div>')+
-   '<div class="cd" style="display:none"></div>';
-  c.addEventListener('pointerdown',()=>openAsm(i,false));
-  d.appendChild(c);
- }
- updateCds();
-}
-function updateCds(){
- document.querySelectorAll('#dock .card').forEach(c=>{
-  const o=S.owned[+c.dataset.oi];if(!o)return;
-  const left=o.cdUntil-now();
-  const cd=c.querySelector('.cd');
-  if(left>0){cd.style.display='flex';cd.textContent=Math.ceil(left/1000);c.classList.remove('ready')}
-  else{cd.style.display='none';if(!S.asm&&!S.betOpen)c.classList.add('ready')}
- });
-}
-
-/* ============ 4·5박: 조립과 발사 ============ */
-function openAsm(oi,guided){
- const o=S.owned[oi];if(!o||S.asm||S.betOpen||S.over)return;
- if(o.cdUntil>now()){SFX.wrong();return}
- const W=WORDS[o.wi];
- S.asm={oi,word:W.w,pos:0,wrong:0,guided:!!guided||o.casts===0};
- document.querySelectorAll('#dock .card').forEach(c=>c.classList.toggle('selected',+c.dataset.oi===oi));
- const br=$('#buildrow');br.innerHTML='';
- for(let i=0;i<W.w.length;i++){const s=document.createElement('div');s.className='bslot';br.appendChild(s)}
- let letters=W.w.split('');
- if(o.lv>=2){const d=[];while(d.length<3){const ch=ALPHA[ri(0,25)];if(!W.w.includes(ch)&&!d.includes(ch))d.push(ch)}letters=letters.concat(d)}
- shuffle(letters);
- const tl=$('#tiles');tl.innerHTML='';
- letters.forEach(ch=>{
-  const t=document.createElement('div');t.className='tile';t.textContent=ch;t.dataset.ch=ch;
-  t.addEventListener('pointerdown',()=>tapTile(t));
-  tl.appendChild(t);
- });
- $('#tray').classList.add('on');
- markHint();
- if(S.asm.guided)say(W.w);
-}
-function markHint(){
- document.querySelectorAll('#tiles .tile').forEach(t=>t.classList.remove('hint'));
- const a=S.asm;if(!a)return;
- if(a.guided||a.wrong>=3){
-  const need=a.word[a.pos];
-  const t=[...document.querySelectorAll('#tiles .tile')].find(x=>!x.classList.contains('used')&&x.dataset.ch===need);
-  if(t)t.classList.add('hint');
- }
-}
-function tapTile(t){
- const a=S.asm;if(!a||t.classList.contains('used'))return;
- if(t.dataset.ch===a.word[a.pos]){
-  t.classList.add('used');SFX.tick();
-  const s=document.querySelectorAll('#buildrow .bslot')[a.pos];
-  s.textContent=t.dataset.ch;s.classList.add('fill');
-  a.pos++;
-  if(a.pos>=a.word.length)castNow();else markHint();
- }else{
-  a.wrong++;t.classList.remove('bad');void t.offsetWidth;t.classList.add('bad');SFX.wrong();markHint();
- }
-}
-function closeAsm(){
- S.asm=null;$('#tray').classList.remove('on');
- document.querySelectorAll('#dock .card').forEach(c=>c.classList.remove('selected'));
-}
-$('#trayx').addEventListener('pointerdown',closeAsm);
-function castNow(){
- const a=S.asm,o=S.owned[a.oi],W=WORDS[o.wi];
- closeAsm();
- say(W.w,.95);SFX.fire();shake(false);
- /* 콤보: 6초 안에 '다른 단어' 연결 */
- const t=now();
- if(t-S.lastCast<6000&&S.lastWord!==o.wi)S.combo=Math.min(5,S.combo+1);else S.combo=1;
- S.lastCast=t;S.lastWord=o.wi;hud();
- const mult=1+o.lv*0.5;
- EFFECTS[W.effect](Math.round(4*mult));
- o.casts++;o.cdUntil=t+CD_MS;
- const nl=o.casts>=3?2:o.casts>=1?1:0;
- if(nl>o.lv){o.lv=nl;SFX.lvup();banner('¡Nivel '+nl+'!');
-  setTimeout(()=>{renderDock();const c=document.querySelector('#dock .card[data-oi="'+a.oi+'"]');if(c)c.classList.add('lvup')},60)}
- else renderDock();
-}
-
-/* ============ 뜻=이펙트 ============ */
-const EFFECTS={
- freeze(d){
-  const until=now()+3500;
-  S.foes.forEach(f=>{f.frozen=until;f.el.classList.add('frozen');damage(f,Math.max(1,d-2),'hielo')});
-  shards(50,140,'#cfeefc',14);$('#flash').classList.remove('on');void $('#flash').offsetWidth;$('#flash').classList.add('on');
-  banner('❄');
- },
- bolt(d){
-  const fl=$('#flash');fl.classList.remove('on');void fl.offsetWidth;fl.classList.add('on');
-  let strongest=null;S.foes.forEach(f=>{if(!strongest||f.hp>strongest.hp)strongest=f});
-  S.foes.slice().forEach(f=>{
-   const ln=document.createElementNS('http://www.w3.org/2000/svg','svg');
-   ln.setAttribute('class','boltln');ln.setAttribute('viewBox','0 0 40 300');
-   ln.style.cssText='left:calc('+f.x+'% - 20px);top:0;width:40px;height:'+(f.y+40)+'px;position:absolute';
-   ln.innerHTML='<polyline points="20,0 12,80 26,150 14,220 20,300" fill="none" stroke="#f2c94c" stroke-width="7" stroke-linejoin="round"/>';
-   sky.appendChild(ln);setTimeout(()=>ln.remove(),240);
-   damage(f,f===strongest?d+2:Math.max(1,d-1),'rayo');
-  });
-  shake(true);SFX.boom();
- },
- wind(d){
-  S.foes.forEach(f=>{f.y=Math.max(-60,f.y-130);f.el.style.top=f.y+'px';damage(f,Math.max(1,d-3),'viento')});
-  for(let i=0;i<10;i++){const s=document.createElement('div');s.className='shard';s.style.background='#7cbf82';
-   s.style.left=rnd(5,95)+'%';s.style.top=rnd(60,90)+'%';
-   s.animate([{transform:'translate(0,0) rotate(0)',opacity:1},{transform:'translate('+rnd(-40,40)+'px,-260px) rotate(540deg)',opacity:0}],
-    {duration:900,easing:'ease-out'}).onfinish=()=>s.remove();sky.appendChild(s)}
-  banner('🌬');
- },
- rock(d){
-  let t=null;S.foes.forEach(f=>{if(!t||f.y>t.y)t=f});
-  if(!t){shake(true);SFX.boom();return}
-  const r=document.createElement('div');r.className='fx';
-  r.style.cssText='left:calc('+t.x+'% - 34px);top:-80px;width:68px;height:68px';
-  r.innerHTML='<svg viewBox="0 0 100 100" width="100%" height="100%">'+IC.rock+'</svg>';
-  sky.appendChild(r);
-  r.animate([{transform:'translateY(0)'},{transform:'translateY('+(t.y+90)+'px)'}],
-   {duration:320,easing:'cubic-bezier(.5,0,1,.4)'}).onfinish=()=>{
-    r.remove();shake(true);SFX.boom();shards(t.x,t.y+40,'#b09a84',12);
-    S.foes.slice().forEach(f=>{const dx=Math.abs(f.x-t.x);if(dx<28)damage(f,dx<10?d+4:d,'piedra')});
-   };
- },
- fire(d){
-  const fw=$('#firewave');fw.classList.remove('on');void fw.offsetWidth;fw.classList.add('on');
-  const until=now()+4000;
-  S.foes.forEach(f=>{f.burn=until;f.burnTick=now();f.el.classList.add('burn');damage(f,Math.max(1,d-2),'fuego')});
-  SFX.boom();banner('🔥');
- }
-};
-
-/* ============ 웨이브 ============ */
-const SCRIPT=[
- {carrier:0},
- {minions:2},
- {carrier:1,escort:1},
- {minions:3},
- {carrier:2,escort:1},
- {minions:3},
- {carrier:3,escort:2},
- {minions:4},
- {carrier:4,escort:2},
- {minions:5},
- {minions:6}
-];
-function nextWave(){
- S.wave++;
- if(S.wave>=SCRIPT.length){win();return}
- const w=SCRIPT[S.wave];
- if(w.carrier!=null){
-  spawnFoe('carrier',w.carrier,50);
-  for(let i=0;i<(w.escort||0);i++)spawnFoe('minion',null,i%2?22:78);
-  banner('?');
- }else{
-  for(let i=0;i<w.minions;i++)setTimeout(()=>{if(!S.over)spawnFoe('minion')},i*700);
- }
-}
-/* ============ 메인 루프 ============ */
-let lastT=0;
-function loop(t){
- if(S.over)return;
- const dt=Math.min(50,t-lastT)/1000;lastT=t;
- const skyH=sky.clientHeight;
- const moving=!S.paused&&!S.betOpen&&!(S.asm&&S.asm.guided);
- if(moving&&S.phase==='battle'){
-  S.foes.slice().forEach(f=>{
-   const tn=now();
-   if(f.burn>tn&&tn-f.burnTick>900){f.burnTick=tn;damage(f,1,'burn')}
-   if(f.burn<=tn)f.el.classList.remove('burn');
-   if(f.frozen>tn)return;
-   f.el.classList.remove('frozen');
-   f.y+=f.speed*dt*(S.asm?0.55:1);   /* 조립 중엔 살짝 느리게 — 압박은 있되 잔인하진 않게 */
-   f.el.style.top=f.y+'px';
-   if(f.y>skyH-96){breach(f)}
-  });
-  if(S.foes.length===0&&!S.betOpen&&!S.asm)waveGapMs+=dt*1000;else waveGapMs=0;
-  if(S.foes.length===0&&waveGapMs>900&&!S.betOpen&&!S.asm){waveGapMs=0;nextWave()}
- }
- updateCds();
- if(now()-S.lastCast>6000&&S.combo>1){S.combo=1;hud()}
- requestAnimationFrame(loop);
-}
-let waveGapMs=0;
-function breach(f){
- f.dead=true;f.el.remove();S.foes=S.foes.filter(x=>x!==f);
- S.hearts--;hud();SFX.hurt();shake(true);banner('💔');
- if(f.type==='carrier'&&f.wi>=0){/* 운반자를 놓치면 다시 온다 */setTimeout(()=>{if(!S.over)spawnFoe('carrier',f.wi,50)},1500)}
- if(S.hearts<=0)lose();
-}
-
-/* ============ 시작·끝 ============ */
-function startBattle(){
- $('#title').classList.remove('on');$('#results').classList.remove('on');
- S.phase='battle';S.hearts=3;S.score=0;S.combo=0;S.owned=[];S.wave=-1;S.over=false;
- S.bets={right:0,total:0};S.foes.forEach(f=>f.el.remove());S.foes=[];S.asm=null;S.betOpen=false;
- closeAsm();$('#betlayer').classList.remove('on');
- renderDock();hud();S.t0=now();
- ac();say(' ');  /* 오디오·TTS 예열 */
- nextWave();
- lastT=performance.now();requestAnimationFrame(loop);
-}
-function endStats(){
- const secs=Math.round((now()-S.t0)/1000);
- const g=$('#resgrid');g.innerHTML='';
- S.owned.forEach(o=>{const W=WORDS[o.wi];
-  const c=document.createElement('div');c.className='rescard';
-  c.innerHTML=icon(W.pic)+'<div class="wd">'+W.w+'</div><div class="mlv">Lv'+o.lv+' · ×'+o.casts+'</div>';
-  c.addEventListener('pointerdown',()=>say(W.w));
-  g.appendChild(c)});
- $('#resstat').innerHTML='⏱ '+Math.floor(secs/60)+'m '+(secs%60)+'s · ⭐ '+S.score+
-  ' · 🎯 '+S.bets.right+'/'+S.bets.total+'<br><span style="font-size:12.5px;opacity:.75">카드를 탭하면 발음이 나와</span>';
-}
-function win(){S.over=true;S.phase='results';$('#resh').textContent='¡Victoria!';endStats();$('#results').classList.add('on');SFX.loot()}
-function lose(){S.over=true;S.phase='results';$('#resh').textContent='¡Ay, no!';endStats();$('#results').classList.add('on');SFX.hurt()}
-
-/* ============ UI 배선 ============ */
-$('#playbtn').addEventListener('pointerdown',startBattle);
-$('#againbtn').addEventListener('pointerdown',startBattle);
-$('#gear').addEventListener('pointerdown',()=>{S.paused=true;$('#panel').classList.add('on')});
-$('#resumebtn').addEventListener('pointerdown',()=>{S.paused=false;$('#panel').classList.remove('on')});
-$('#restartbtn').addEventListener('pointerdown',()=>{S.paused=false;$('#panel').classList.remove('on');startBattle()});
-document.addEventListener('visibilitychange',()=>{if(document.hidden&&S.phase==='battle'){S.paused=true;$('#panel').classList.add('on')}});
-
-/* ============ 검증 프로브 (프로토 전용 — 본편 이식 시 제거) ============ */
-window.__P.start=startBattle;
-window.__P.killAll=()=>S.foes.slice().forEach(f=>{f.hp=1;damage(f,9,'probe')});
-window.__P.tapCh=ch=>{const t=[...document.querySelectorAll('#tiles .tile')].find(x=>!x.classList.contains('used')&&x.dataset.ch===ch);if(t)tapTile(t)};
-window.__P.autoAsm=()=>{const a=S.asm;if(!a)return false;for(const ch of a.word.slice(a.pos))window.__P.tapCh(ch);return true};
-window.__P.bet=(good)=>{const W=WORDS[betWi];resolveBet(good?W.pic:DECOY_PICS[0])};
-window.__P.openCard=oi=>openAsm(oi,false);
-window.__P.zeroCd=()=>S.owned.forEach(o=>o.cdUntil=0);
-</script>
+    <footer>Learn words through play</footer>
+  </main>
 </body>
 </html>
