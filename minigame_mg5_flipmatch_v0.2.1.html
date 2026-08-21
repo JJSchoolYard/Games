@@ -1,0 +1,2437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Flip Match</title>
+<link rel="icon" href="data:,">
+<!-- ======================================================================
+  minigame_mg3_redlight_v0.4.html · 2026-08-14 · 상태: 검토중
+  MG3 Red Light — 철자 SPELLING + 순발력 REFLEX (다축)
+  "무궁화 꽃이 피었습니다" 계보 · 무너진 도시 내리막길 · 사용자가 술래다.
+
+  v0.4 변경
+   ★ **버그 수정(치명)** — v0.3에서 배경 개체가 허수아비→생존자로 바뀌며 함수명이
+     `cheerBg`→`cheerSurvs`로 변했는데 `wordClear()`가 옛 이름을 계속 불렀다.
+     동기 호출이라 여기서 ReferenceError가 나면서 **점수·별·persist·다음 단계 예약이
+     통째로 날아가 한 판을 깨면 게임이 멈췄다.** 회귀 검사 신설(버그 사본으로 재현 확인).
+   ① 총을 **Spellshot과 동일**하게 — 각도 전이 `.09s`(스냅하지 않고 스르륵 따라온다),
+      하드 오프셋 그림자, 강한 반동/코르크 회전/장전 딥, 조준경형 타겟마크
+   ② 좀비가 **배경 맨 끝(지평선)에서 출발**해 다가올수록 커진다 — 스폰 깊이 0.80→**0.97**,
+      크기식 (0.46+1.00p) → **(0.30+1.24p)**로 약 4배 성장. 처음엔 작아서 읽기 어렵다
+   ③ 사람 크기를 **좀비의 60%**로(118 → 71 기준폭)
+
+  유지: 위험선(넘으면 즉시 하트 -1) · 고정 사격 창 · 오답=넉백 방어 · 정답 서지 ·
+  심장박동/붉은 화면/램프 크레센도 · 나는 좀비 · 사방 등장 · 생존자와 물림 연출 ·
+  던져주는 아이템과 **이로운 폭탄**(사용자 지정 예외) · 예습 3초 자동 · 스와이프 장전 ·
+  Spellshot 동일 SHOUT 서체 · 실루엣이 글자 모양을 흘림 · i/l 구분 글리프 · z 우선 판정.
+====================================================================== -->
+<style>
+:root{
+  --ink:#3B2B3A; --ink-soft:#6B5560;
+  --paper-0:#FBF3E4; --paper-1:#F2E4CC; --paper-2:#E4D0AE; --paper-3:#CDB489; --paper-4:#A9906A;
+  --coral:#FF7A6B; --butter:#FFCE5C; --mint:#6FD9C0; --sky:#6FB8E8; --grape:#B49AE0; --rose:#F79FC4;
+  --drop:#8FD8F0; --drop-deep:#5AAECF; --blush:#FF8E86;
+  --ui:1; --dur:1;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden}
+body{background:var(--paper-0);color:var(--ink);
+  font-family:"Pretendard","Apple SD Gothic Neo","Noto Sans KR",system-ui,-apple-system,sans-serif;
+  font-size:calc(16px * var(--ui));user-select:none;-webkit-user-select:none;touch-action:none}
+#app{position:fixed;inset:0;display:flex;flex-direction:column}
+button{font:inherit;color:inherit}
+/* ⑧ SHOUT 서체 — Spellshot과 동일(둥근 볼드 대문자 + 두꺼운 잉크 외곽, paint-order로 획이 뒤로) */
+.shout{font-family:"Arial Rounded MT Bold","Baloo 2","Pretendard",system-ui,sans-serif;
+  font-weight:900;letter-spacing:1px;color:var(--sc,#FFD45C);
+  -webkit-text-stroke:7px var(--ink);paint-order:stroke fill;
+  font-size:clamp(30px,8vw,58px);line-height:1.05;text-align:center;white-space:nowrap;
+  filter:drop-shadow(0 4px 0 rgba(59,43,58,.22))}
+.callout .shout{font-size:clamp(30px,7.4vw,56px)}   /* v0.9.1 ③ — 가리는 면적을 줄인다 */
+.readyov .shout{font-size:clamp(52px,14vw,104px)}
+.toast .shout{font-size:clamp(20px,5.4vw,38px)}     /* v0.9.1 ③ */
+.reloadhint .shout{font-size:clamp(15px,3.6vw,22px);-webkit-text-stroke:4px var(--ink)}
+.pauseov .shout{font-size:clamp(44px,12vw,88px)}
+.ib{flex:0 0 auto;width:46px;height:46px;border-radius:14px;border:2.5px solid var(--ink);
+  background:var(--paper-1);box-shadow:0 3px 0 var(--ink);cursor:pointer;padding:7px;display:grid;place-items:center}
+.ib:active{transform:translateY(2px);box-shadow:0 1px 0 var(--ink)}
+.ib svg{width:100%;height:100%;display:block}
+
+/* ---------- 상단 HUD ---------- */
+/* ★ 대시보드 = 상단 두 줄. **철자판까지가 대시보드다.**
+   철자판을 필드 위에 띄우면 배경·연출·표적과 영원히 싸운다 — 겹침을 하나씩 피해 다니는 것보다
+   처음부터 안 겹치는 자리에 두는 것이 옳다(사용자 판단, MG1·MG2·MG4와 동일 표준).
+   1행: ♥×N · 점수 · 먹물 · [여백] · ⚙
+   2행: 시계+타이머(고정폭) · 여백 · 철자판(왼쪽 정렬, 오른쪽은 비워 둔다) */
+.bar{display:flex;flex-direction:column;gap:5px;flex:0 0 auto;z-index:40;
+  padding:calc(6px + env(safe-area-inset-top)) 10px 6px;
+  background:linear-gradient(var(--paper-0) 88%,transparent)}
+.dashrow{display:flex;align-items:center;gap:8px;min-width:0}
+/* v0.9 ②(사용자 지시) — 하트를 개수만큼 그리지 않고 **(♥ × 숫자)** 한 덩어리로.
+   상한이 올라가도 1행 폭이 흔들리지 않는다(MG1 공용 표준과 동일 표기). */
+.hearts{display:flex;gap:4px;align-items:center;flex:0 0 auto;background:var(--paper-1);
+  border:3px solid var(--ink);border-radius:12px;box-shadow:0 3px 0 var(--ink);padding:3px 9px}
+.hearts svg{width:22px;height:22px;display:block}
+.hearts .hx{font-weight:900;font-size:calc(1.02rem);letter-spacing:-.5px;min-width:22px;text-align:left}
+.hearts.zero .hx{color:#E4374B}
+.cnt{flex-shrink:0;display:flex;align-items:center;gap:5px;background:var(--paper-1);
+  border:2.5px solid var(--ink);border-radius:99px;padding:3px 10px 3px 6px;font-weight:900}
+.cnt svg{width:20px;height:20px}
+.cnt .num{font-size:calc(.92rem)}
+/* ④ 고정폭 — 6자 공간. 점수가 올라가도 폭이 변하지 않아 레이아웃이 흔들리지 않는다 */
+/* v0.9 ③(사용자 지시) — 점수·먹물 창을 **같은 폭으로 늘려 1행을 꽉 채운다**(여백 spacer 폐지).
+   flex:1 1 0 이면 둘이 남는 폭을 정확히 반씩 나눠 가지므로 화면 폭이 달라도 두 창은 항상 같다. */
+.cnt.fixed{flex:1 1 0;min-width:0;width:auto;justify-content:flex-start}
+.cnt.fixed .num{flex:1 1 auto;text-align:right;font-variant-numeric:tabular-nums}
+.spacer{flex:1 1 auto;min-width:0}
+.bar .ib{width:40px;height:40px;border-radius:12px}
+/* 라운드 별 — 철자판 안 왼쪽으로 옮겼다(1행 폭을 비워 준다. MG1의 단어 별과 같은 자리) */
+.stars{display:flex;gap:3px;flex:0 0 auto}
+.stars svg{width:22px;height:22px}
+/* ③ 시계 + 타이머 — 하트 바로 아랫줄. 이 칸의 폭이 곧 철자판의 들여쓰기 기준이다 */
+.timecell{flex:0 0 auto;width:min(22vw,86px);display:flex;align-items:center}   /* v0.9 ④ — 한 칸 축소 */
+.clockwrap{display:flex;align-items:center;gap:5px;background:var(--paper-0);border:3px solid var(--ink);
+  border-radius:999px;padding:3px 10px 3px 5px;box-shadow:0 3px 0 var(--ink);flex:1 1 auto;min-width:0}
+.clock{width:27px;height:27px;flex:0 0 auto}
+.clkface{width:100%;height:100%;display:block}
+.clock svg.clkburst{animation:cshake .5s}
+@keyframes cshake{25%{transform:translateX(-3px) rotate(-6deg)}75%{transform:translateX(3px) rotate(6deg)}}
+.cnum{font-weight:900;font-size:calc(1.02rem);flex:1 1 auto;text-align:right;letter-spacing:-.5px;
+  font-variant-numeric:tabular-nums}
+/* 실패 경고등 3칸 — 언어 0 */
+.warns{display:flex;gap:4px;align-items:center}
+.warns i{width:17px;height:17px;border-radius:50%;border:2.5px solid var(--ink);
+  background:#3A2E3A;box-shadow:inset 0 2px 3px rgba(0,0,0,.45);display:block}
+.warns i.on{background:radial-gradient(circle at 35% 32%,#FFE0A0,#FF5A4A 62%);
+  box-shadow:0 0 9px #FF5A4A;animation:warnpop .4s cubic-bezier(.2,1.8,.4,1)}
+@keyframes warnpop{45%{transform:scale(1.45)}}
+
+/* ---------- 목표 단어 슬롯 ---------- */
+/* ★ 철자판 — 대시보드 2행. **왼쪽 정렬 + 오른쪽 개방**(긴 단어가 오른쪽으로 자란다).
+   시계 영역만큼 들여쓴 자리에서 시작한다. 필드 위에 띄우지 않으므로
+   배경·연출·표적을 가리는 문제 자체가 생기지 않는다. */
+.goal{flex:1 1 auto;min-width:0;margin-left:4px;   /* v0.9 ④ — 철자판을 왼쪽으로 더 당긴다 */
+  display:flex;align-items:center;justify-content:flex-start;gap:8px;
+  background:var(--paper-1);border:3px solid var(--ink);border-radius:16px;
+  padding:4px 12px 4px 8px;box-shadow:0 3px 0 rgba(59,43,58,.28);
+  overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+.goal::-webkit-scrollbar{display:none}
+.goal .pic{width:34px;height:34px;flex:0 0 auto}
+.goal .pic svg{width:100%;height:100%;display:block}
+.slotrow{display:flex;gap:4px;align-items:flex-end;flex:0 0 auto}
+.slot{width:26px;height:36px;position:relative;border-bottom:4px solid var(--ink);border-radius:3px}
+.slot svg{position:absolute;inset:2px 1px 3px;width:auto;height:auto;max-width:100%;max-height:100%;margin:auto}
+.slot.ghost svg{opacity:.20;filter:grayscale(.45)}
+.slot.need{background:#FFF3CE}
+.slot.need svg{animation:slotpulse 1s ease-in-out infinite}
+@keyframes slotpulse{50%{opacity:.55;transform:scale(1.08)}}
+.slot.fill svg{opacity:1;animation:slotin .4s cubic-bezier(.2,1.7,.4,1)}
+@keyframes slotin{0%{transform:scale(1.8);opacity:0}100%{transform:scale(1)}}
+
+/* ---------- 필드(황혼의 들판) ---------- */
+.sky{position:relative;flex:1;overflow:hidden;
+  background:linear-gradient(#2A2038 0%,#46283E 4%,#75384A 8%,#B0504A 12%,#D97148 15%,#F0A257 17%,#6A5C66 19%,#5A4E5C 100%)}
+.fx{position:absolute;inset:0;z-index:60;pointer-events:none}
+.bgsvg{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:1;pointer-events:none}
+.worldg{position:absolute;inset:0;z-index:2}
+.ent{position:absolute;left:0;top:0;pointer-events:none;will-change:transform}
+.ent svg{display:block;overflow:visible}
+
+/* ---------- 좀비 (v0.1 — 절뚝이는 흐느적) ---------- */
+.zombie .bodyg{transform-box:fill-box;transform-origin:50% 94%}
+.zombie .legL,.zombie .legR{transform-box:fill-box;transform-origin:50% 4%}
+.zombie .armF,.zombie .armB{transform-box:fill-box;transform-origin:14% 12%}
+.zombie .armB{transform-origin:86% 12%}
+.zombie .limbs{transition:opacity .3s}
+.zombie.walk .bodyg{animation:shamble var(--sd,1.15s) ease-in-out infinite var(--ad,0s)}
+/* 좌우 기울기와 상하 흔들림의 주기를 어긋나게 해 '절뚝'이 만들어진다 */
+@keyframes shamble{
+  0%{transform:rotate(-7deg) translateY(0)}
+  18%{transform:rotate(-4deg) translateY(-8px)}
+  40%{transform:rotate(3deg) translateY(-1px)}
+  58%{transform:rotate(7deg) translateY(-6px)}
+  78%{transform:rotate(2deg) translateY(0)}
+  100%{transform:rotate(-7deg) translateY(0)}}
+.zombie.walk .legL{animation:legswing var(--sd,1.15s) ease-in-out infinite var(--ad,0s)}
+.zombie.walk .legR{animation:legdrag var(--sd,1.15s) ease-in-out infinite var(--ad,0s)}
+@keyframes legswing{0%,100%{transform:rotate(21deg)}50%{transform:rotate(-17deg)}}
+@keyframes legdrag{0%,100%{transform:rotate(-8deg)}62%{transform:rotate(7deg)}}
+.zombie.walk .armF{animation:armlimp var(--sd,1.15s) ease-in-out infinite var(--ad,0s)}
+.zombie.walk .armB{animation:armdangle calc(var(--sd,1.15s) * 1.6) ease-in-out infinite var(--ad,0s)}
+@keyframes armlimp{0%,100%{transform:rotate(-6deg)}50%{transform:rotate(5deg)}}
+@keyframes armdangle{0%,100%{transform:rotate(8deg)}50%{transform:rotate(-9deg)}}
+.zombie .drool{transform-box:fill-box;transform-origin:50% 0%}
+.zombie.walk .drool{animation:drooldrip 3.4s ease-in infinite var(--ad,0s)}
+@keyframes drooldrip{0%,55%{transform:scaleY(.25);opacity:.65}
+  78%{transform:scaleY(1.7);opacity:.9}
+  88%{transform:translateY(26px) scaleY(1.1);opacity:0}100%{opacity:0}}
+.zombie.frozen .bodyg,.zombie.frozen .legL,.zombie.frozen .legR,
+.zombie.frozen .armF,.zombie.frozen .armB,.zombie.frozen .drool{animation-play-state:paused}
+/* 실루엣 — 젖빛 유리 뒤. 몸통(글자)만 새까맣게 남고 얼굴은 숨어 글자꼴이 읽힌다 */
+.zombie.sil{filter:brightness(0) blur(.9px) drop-shadow(0 0 4px rgba(255,255,255,.85))
+  drop-shadow(0 0 9px rgba(255,255,255,.5));opacity:.93}
+.zombie.sil .limbs{opacity:.26}
+.zombie.sil .face{opacity:0}
+/* 코믹 회피 5종 */
+.zombie.dg1 .bodyg{animation:dgMatrix .62s cubic-bezier(.3,1.5,.4,1)}
+@keyframes dgMatrix{35%{transform:rotate(-58deg) translateY(16px)}70%{transform:rotate(-58deg) translateY(16px)}}
+.zombie.dg2 .bodyg{animation:dgJump .62s cubic-bezier(.3,1.4,.4,1)}
+@keyframes dgJump{40%{transform:translateY(-64px) rotate(-8deg)}70%{transform:translateY(-14px)}}
+.zombie.dg3 .bodyg{animation:dgSpin .62s ease-in-out}
+@keyframes dgSpin{100%{transform:rotate(360deg)}}
+.zombie.dg4 .bodyg{animation:dgDuck .62s ease-out}
+@keyframes dgDuck{35%,65%{transform:translateY(30px) scaleY(.52) scaleX(1.2)}}
+.zombie.dg5 .bodyg{animation:dgBite .62s ease-out}
+@keyframes dgBite{25%{transform:translateX(-11px) rotate(-9deg)}55%{transform:translateX(9px) rotate(11deg)}}
+.zombie.dg5 .chomp{opacity:1;animation:chompin .5s ease-out}
+.zombie .chomp{opacity:0}
+@keyframes chompin{0%{transform:translateX(40px) scale(.4)}60%{transform:none}100%{opacity:0}}
+/* 쓰러짐 — 위치는 .ent가 쥐고 있으니 안쪽 svg만 넘어뜨린다 */
+.zombie.down svg{animation:zdown .6s ease-in forwards;transform-origin:50% 94%}
+@keyframes zdown{55%{transform:rotate(48deg) translateY(6px)}100%{transform:rotate(84deg) translateY(16px);opacity:0}}
+/* 습격 1단계 — 그 자리에서 확 달려든다 */
+.zombie.lunge{z-index:900!important}
+.zombie.lunge svg{animation:zlunge .46s cubic-bezier(.4,0,.9,.6) forwards;transform-origin:50% 92%}
+@keyframes zlunge{100%{transform:scale(3.6) rotate(6deg)}}
+/* 습격 2단계 — 화면 한가운데를 얼굴이 꽉 채운다 */
+.lungeov{position:absolute;inset:0;z-index:940;pointer-events:none;display:grid;place-items:center}
+.lungeov svg{width:min(96vw,96vh);height:auto;
+  animation:lungein 1.05s cubic-bezier(.3,0,.7,.6) forwards;transform-origin:50% 46%;
+  filter:drop-shadow(0 12px 26px rgba(20,10,20,.55))}
+@keyframes lungein{0%{transform:scale(.30);opacity:0}
+  14%{opacity:1}
+  62%{transform:scale(1.35)}
+  100%{transform:scale(2.6);opacity:1}}
+
+/* ① 나는 좀비 — 지면 평면에서 해방돼 위쪽 공간을 쓴다 */
+/* ② 나는 좀비 — 다리를 **뒤로 쭉 뻗은** 자세. 정면 원근에서 뒤로 뻗은 다리는
+   짧게 눌려 보이는 게 맞다(foreshortening). 그래서 세로로 납작하게 눌러 위로 붙이고
+   투명도를 낮춰 거의 안 보이게 한다. 걷기 애니메이션도 끈다 — 나는데 걸으면 안 된다.
+   ★ 그림만 바뀐다. 판정 상자(viewBox 150×240, 발끝 y=222)는 그대로라 조준은 불변. */
+.zombie.fly .legL,.zombie.fly .legR{opacity:.26;
+  transform:translateY(-9%) scaleY(.20) rotate(3deg) !important;animation:none!important}
+.zombie.fly .legR{transform:translateY(-9%) scaleY(.20) rotate(-3deg) !important}
+.zombie.fly .foot{opacity:0}
+.zombie .wing{transform-box:fill-box;transform-origin:92% 40%;display:none}
+.zombie .wingR{transform-origin:8% 40%}
+.zombie.fly .wing{display:block}
+.zombie.fly.walk .wingL{animation:flapL .34s ease-in-out infinite}
+.zombie.fly.walk .wingR{animation:flapR .34s ease-in-out infinite}
+@keyframes flapL{50%{transform:rotate(-34deg) scaleY(.72)}}
+@keyframes flapR{50%{transform:rotate(34deg) scaleY(.72)}}
+.zombie.fly.walk .bodyg{animation:hover 1.6s ease-in-out infinite var(--ad,0s)!important}
+@keyframes hover{50%{transform:translateY(-12px) rotate(3deg)}}
+body.nomotion .zombie.fly .wing{animation:none}
+
+/* ⑦ 오답 = 아파하며 뒤로 물러남(방어 수단). 반응은 5종이지만 결과는 항상 넉백이라
+   유형별로 난이도 신호가 새지 않는다 */
+.zombie.hb1 .bodyg{animation:hbStagger .6s ease-out}
+@keyframes hbStagger{20%{transform:translateY(-9px) rotate(-18deg) scale(.94)}
+  55%{transform:rotate(13deg)}100%{transform:none}}
+.zombie.hb2 .bodyg{animation:hbSpin .6s ease-out}
+@keyframes hbSpin{100%{transform:rotate(-360deg)}}
+.zombie.hb3 .bodyg{animation:hbFlip .6s cubic-bezier(.3,1.3,.4,1)}
+@keyframes hbFlip{45%{transform:translateY(-52px) rotate(-160deg)}100%{transform:none}}
+.zombie.hb4 .bodyg{animation:hbHop .6s ease-out}
+@keyframes hbHop{30%{transform:translateY(-34px) scaleY(1.12)}
+  60%{transform:translateY(0) scaleY(.82) scaleX(1.14)}100%{transform:none}}
+.zombie.hb5 .bodyg{animation:hbTumble .6s ease-in-out}
+@keyframes hbTumble{35%{transform:translateY(14px) rotate(-72deg) scaleY(.8)}
+  70%{transform:rotate(-14deg)}100%{transform:none}}
+.zombie .ouch{opacity:0}
+.zombie.hb1 .ouch,.zombie.hb2 .ouch,.zombie.hb3 .ouch,.zombie.hb4 .ouch,.zombie.hb5 .ouch{
+  opacity:1;animation:ouchpop .6s ease-out}
+@keyframes ouchpop{0%{transform:scale(.3);opacity:0}35%{transform:scale(1.15);opacity:1}100%{opacity:0}}
+
+/* 격노한 좀비 — 붉은 아지랑이를 두르고 두 배 속도로 달려온다 */
+.zombie.rage{filter:drop-shadow(0 0 10px #FF3A2A) drop-shadow(0 0 20px rgba(255,58,42,.6))}
+.zombie.rage.sil{filter:brightness(0) blur(.9px) drop-shadow(0 0 6px #FF6A50)
+  drop-shadow(0 0 14px rgba(255,90,74,.75));opacity:.95}
+.zombie.rage .bodyg{animation-duration:calc(var(--sd,1.15s) * .45)!important}
+.zombie.rage .legL,.zombie.rage .legR{animation-duration:calc(var(--sd,1.15s) * .45)!important}
+
+/* 위험 화면 — 가까울수록 가장자리가 붉게 번진다 */
+.dangerov{position:absolute;inset:0;z-index:44;pointer-events:none;opacity:0;
+  transition:opacity .18s linear;
+  background:radial-gradient(ellipse at 50% 60%,rgba(255,60,40,0) 46%,rgba(255,38,24,.55) 82%,rgba(140,8,8,.90) 100%)}
+/* 위험선 — 넘으면 물린다 */
+.dline{animation:dlinepulse 1.25s ease-in-out infinite}
+@keyframes dlinepulse{50%{opacity:.55}}
+body.nomotion .dline{animation:none}
+
+/* ③⑨ 도망다니는 생존자 */
+.surv .sv{transform-box:fill-box;transform-origin:50% 96%}
+.surv.run .sv{animation:svrun .38s ease-in-out infinite}
+@keyframes svrun{50%{transform:translateY(-7px) rotate(-4deg)}}
+.surv.caught .sv{animation:svshake .12s linear infinite}
+@keyframes svshake{25%{transform:translate(-4px,-2px) rotate(-7deg)}75%{transform:translate(4px,2px) rotate(7deg)}}
+.surv.cheer .sv{animation:svcheer .4s ease-in-out infinite}
+@keyframes svcheer{50%{transform:translateY(-18px) scale(1.06)}}
+.surv .svfront{display:none}
+.surv.cheer .svfront{display:block}
+.surv.cheer .svside{display:none}
+body.nomotion .surv .sv{animation:none}
+/* 물어뜯기는 순간 — 만화식 먼지구름(5세 기준: 유혈 표현 없음) */
+.scuffle{position:absolute;z-index:600;pointer-events:none;margin:-40px 0 0 -40px;width:80px;height:80px}
+.scuffle svg{width:100%;height:100%;display:block;animation:scuf .12s linear infinite}
+@keyframes scuf{50%{transform:rotate(18deg) scale(1.1)}}
+
+/* ⑨ 생존자가 던져주는 아이템 — 공중에서 쏴 맞히면 내 것.
+   ★ z를 유리문(50) **아래**로 내렸다. 그래야 문이 닫혀 있을 때 물건이 문에 부딪혀 깨지는 것이
+   그림으로도 맞는다(물건이 유리 앞을 지나가면 문이 없는 것처럼 보인다).
+   좀비·생존자는 .worldg(z:2) 안에서 자기들끼리 쌓이므로 물건은 여전히 그들보다 앞이다. */
+.thrown{position:absolute;z-index:46;pointer-events:none;will-change:transform}
+.thrown .tin{width:100%;height:100%;border-radius:16px;border:4px solid var(--ink);
+  background:linear-gradient(#F2E4CC,#D8BE93);box-shadow:0 4px 0 rgba(59,43,58,.35);
+  display:grid;place-items:center;animation:tspin 1.1s linear infinite}
+.thrown.bomb .tin{background:radial-gradient(circle at 34% 30%,#6B5F72,#2E2733);border-color:#1E1822}
+@keyframes tspin{100%{transform:rotate(360deg)}}
+.thrown .tin svg{width:66%;height:66%}
+.thrown.bomb .tin svg{width:78%;height:78%}
+body.nomotion .thrown .tin{animation:none}
+/* 폭탄 폭발 = 이 게임에선 이롭다(사용자 지정 예외) */
+.blastring{position:absolute;z-index:560;pointer-events:none;border-radius:50%;
+  border:10px solid #FFE0A0;margin:-30px 0 0 -30px;width:60px;height:60px;
+  animation:blastr .75s cubic-bezier(.2,.7,.3,1) forwards}
+@keyframes blastr{100%{width:230vmax;height:230vmax;margin:-115vmax 0 0 -115vmax;
+  border-width:3px;opacity:0}}
+.blastflash{position:absolute;inset:0;z-index:555;pointer-events:none;background:#FFF3D0;
+  animation:cflash .5s ease-out forwards}
+
+/* ---------- 젖빛 유리 자동문 ---------- */
+.glass{position:absolute;inset:0;z-index:50;pointer-events:none;overflow:hidden}
+.gpane{position:absolute;top:0;bottom:0;width:50.6%;
+  background:linear-gradient(105deg,rgba(214,234,246,.52),rgba(178,208,230,.44) 40%,rgba(220,238,248,.56));
+  border-top:0;transition:transform .42s cubic-bezier(.5,0,.2,1)}
+.gpane.l{left:0;border-right:5px solid rgba(120,150,170,.75);
+  box-shadow:inset -14px 0 22px rgba(120,155,178,.40)}
+.gpane.r{right:0;border-left:5px solid rgba(120,150,170,.75);
+  box-shadow:inset 14px 0 22px rgba(120,155,178,.40)}
+.glass.open .gpane.l{transform:translateX(-101%)}
+.glass.open .gpane.r{transform:translateX(101%)}
+.gpane::after{content:"";position:absolute;inset:0;opacity:.5;
+  background:repeating-linear-gradient(118deg,rgba(255,255,255,.5) 0 3px,rgba(255,255,255,0) 3px 9px)}
+.gpane b{position:absolute;top:0;bottom:0;width:13px;background:rgba(255,255,255,.55);
+  box-shadow:0 0 14px rgba(255,255,255,.7)}
+/* ① 닫힌 문에 물건이 부딪힌 순간 — 유리 위(문 앞)에 튐 자국과 파편이 뜬다.
+   유리는 안 깨진다(문이 뚫리면 게임 규칙이 무너진다). 깨지는 건 던진 물건 쪽이다. */
+.gsplat{position:absolute;z-index:53;pointer-events:none;width:96px;height:96px;
+  margin:-48px 0 0 -48px;animation:gsplat .52s ease-out forwards}
+.gsplat svg{width:100%;height:100%;display:block}
+@keyframes gsplat{0%{transform:scale(.35);opacity:1}100%{transform:scale(1.25);opacity:0}}
+.gshard{position:absolute;z-index:54;pointer-events:none;width:14px;height:14px;margin:-7px 0 0 -7px}
+.gshard svg{width:100%;height:100%;display:block}
+body.nomotion .gsplat{animation-duration:.001s}
+.gpane.l b{right:16px} .gpane.r b{left:16px}
+
+/* ---------- 신호등(언어 0 타이머) ---------- */
+.tl{position:absolute;z-index:52;pointer-events:none;width:64px}
+.tl svg{width:100%;height:auto;display:block}
+.tl .bulbR{transition:fill .16s,filter .16s}
+.tl .bulbG{transition:fill .16s,filter .16s}
+.tl.red .bulbR{fill:#FF4A3D;filter:drop-shadow(0 0 12px #FF5A4A)}
+.tl.red .bulbG{fill:#2E4030}
+.tl.green .bulbG{fill:#59E07A;filter:drop-shadow(0 0 12px #59E07A)}
+.tl.green .bulbR{fill:#472826}
+.tlring{transition:none}
+
+/* ---------- 총·탄창(공용 승계) ---------- */
+.gun{position:absolute;bottom:-6px;width:min(13vw,66px);z-index:70;pointer-events:none;
+  filter:drop-shadow(0 6px 0 rgba(59,43,58,.2))}
+/* v0.9 ⑤(사용자 지시) — 총을 **탄창 바로 옆**으로. 탄창은 right:6px·폭 64px이므로
+   그 왼쪽에 붙는다(좁은 화면은 아래 미디어쿼리에서 함께 조정). */
+.gun{width:min(17vw,86px)}
+.gun.right{right:76px} .gun.left{left:76px}
+/* 각도가 스냅하지 않고 스르륵 따라와야 총이 입체로 읽힌다(Spellshot 동일) */
+.gunrot{transition:transform .09s ease;transform-origin:50% 92%}
+.gun.fire .gunrot svg{animation:gunkick .16s ease-out}
+@keyframes gunkick{30%{transform:translateY(13px) scale(.98)}}
+.gun .cork{transform-box:fill-box;transform-origin:50% 100%}
+.gun.fire .cork{animation:corkpop .18s ease-out}
+@keyframes corkpop{40%{transform:translateY(-14px) rotate(-10deg)}}
+.gun.reload svg{animation:gundip .34s ease}
+@keyframes gundip{25%{transform:translateY(34px) rotate(9deg)}70%{transform:translateY(30px) rotate(7deg)}}
+body.nomotion .gun.fire .gunrot svg,body.nomotion .gun.fire .cork{animation:none}
+/* ⑤ 물총 — 화약 연기가 아니라 **물보라**다 */
+.gunpuff{position:absolute;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;
+  z-index:69;pointer-events:none;
+  background:radial-gradient(circle,#EAF9FF 0%,rgba(140,215,240,.62) 52%,rgba(140,215,240,0) 76%);
+  animation:puff .42s ease-out forwards}
+@keyframes puff{from{transform:scale(.4);opacity:.95}to{transform:scale(1.9) translateY(-26px);opacity:0}}
+@keyframes puffout{0%{opacity:.95;scale:.5}100%{opacity:0;scale:1.7}}
+.bullet{position:absolute;width:18px;height:14px;z-index:71;pointer-events:none;margin:-7px 0 0 -9px;
+  transition:transform .115s linear}
+.bulhit{position:absolute;width:22px;height:22px;border-radius:50%;z-index:71;pointer-events:none;
+  background:radial-gradient(circle,#EAF9FF,rgba(122,205,235,.55) 46%,rgba(122,205,235,0) 72%);
+  transform:translate(-50%,-50%);animation:puffout .26s ease-out forwards}
+.reticle{animation:retpop .38s cubic-bezier(.2,1.7,.4,1) forwards;transform-box:fill-box;transform-origin:center}
+@keyframes retpop{0%{transform:scale(1.7);opacity:0}30%{transform:scale(1);opacity:1}
+  75%{opacity:1}100%{transform:scale(.92);opacity:0}}
+.magbtn{position:absolute;bottom:10px;width:64px;height:86px;z-index:71;border:none;background:none;
+  cursor:pointer;padding:0;filter:drop-shadow(0 3px 2px rgba(59,43,58,.3))}
+.magbtn.right{right:6px} .magbtn.left{left:6px}
+.magbtn svg{width:100%;height:auto;display:block}
+.magrow{position:absolute;left:50%;bottom:-4px;transform:translateX(-50%);display:flex;gap:2px;
+  align-items:baseline;background:var(--paper-0);border:2px solid var(--ink);border-radius:9px;padding:1px 6px}
+.magrow .num{font-size:.8rem;font-weight:900}
+.magrow .magn{font-size:.62rem;font-weight:900;color:var(--ink-soft)}
+.magbtn.pop{animation:ammopop .5s cubic-bezier(.2,1.8,.4,1)}
+@keyframes ammopop{40%{transform:scale(1.16)}}
+.magbtn.need .magarrow{opacity:1;animation:arrowbob .7s ease-in-out infinite}
+.magarrow{position:absolute;left:50%;top:-104px;width:78px;height:96px;margin-left:-39px;opacity:0}
+.magbtn.teach .magarrow{opacity:1;animation:arrowbob .7s ease-in-out 2}
+/* v0.6 ④ — 스와이프 장전 연출 */
+.swfx{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);z-index:120;pointer-events:none;
+  width:min(36vw,175px);opacity:.95;filter:drop-shadow(0 6px 0 rgba(59,43,58,.25))}
+.swfx svg{width:100%;height:auto;display:block}
+.swfx.snap{animation:swsnap .26s ease-out}
+@keyframes swsnap{0%{transform:translate(-50%,-50%) translateY(48px) scale(1.35)}
+  55%{transform:translate(-50%,-50%) translateY(-16px) scale(1.12)}
+  100%{transform:translate(-50%,-50%) scale(1)}}
+body.nomotion .swfx.snap{animation:none}
+.magarrow .fing{transform-box:fill-box;transform-origin:50% 20%;animation:swipehint 1.5s ease-in-out infinite}
+@keyframes swipehint{0%,100%{transform:translateY(0)}30%{transform:translateY(26px)}
+  60%{transform:translateY(-6px)}80%{transform:translateY(0)}}
+body.nomotion .magarrow .fing{animation:none}
+@keyframes arrowbob{50%{transform:translateY(5px)}}
+
+/* ---------- 연출 ---------- */
+.toast.top{z-index:960}
+/* v0.9.1 ①② — top(높이)과 opacity는 JS가 좀비 배치를 보고 정한다. 고정 22%는 폐기 */
+.toast{position:absolute;left:50%;top:22%;transform:translateX(-50%);z-index:80;pointer-events:none;
+  animation:toastup .82s ease-out forwards}
+/* v0.9.2 §6.2 — 적응형 반투명이 무효였다: placeFX의 **인라인 opacity를 애니메이션이 덮어썼다**.
+   최고 불투명도를 --fxop 변수로 뽑아 키프레임이 읽게 한다. */
+@keyframes toastup{0%{transform:translate(-50%,14px) scale(.6);opacity:0}
+  22%{transform:translate(-50%,0) scale(1.06);opacity:var(--fxop,1)}
+  80%{opacity:var(--fxop,1)}100%{transform:translate(-50%,-26px);opacity:0}}
+.reloadhint{position:absolute;transform:translate(-50%,-100%);z-index:80;pointer-events:none;
+  animation:toastup .9s ease-out forwards}
+.callout{position:absolute;left:50%;top:15%;transform:translate(-50%,-50%);z-index:82;pointer-events:none}
+
+.callout.in{animation:callin .66s cubic-bezier(.2,1.6,.4,1) forwards}   /* v0.9.1 ③ — 가리는 시간 단축 */
+@keyframes callin{0%{transform:translate(-50%,-50%) scale(.4);opacity:0}
+  20%{transform:translate(-50%,-50%) scale(1.1);opacity:var(--fxop,1)}
+  72%{transform:translate(-50%,-50%) scale(1);opacity:var(--fxop,1)}
+  100%{transform:translate(-50%,-64%) scale(.94);opacity:0}}
+.itempop{position:absolute;width:52px;height:52px;z-index:78;margin:-26px 0 0 -26px;pointer-events:none;
+  animation:itempop 1.15s cubic-bezier(.2,1.4,.4,1) forwards}
+@keyframes itempop{0%{transform:translateY(0) scale(.5);opacity:0}
+  25%{transform:translateY(-22px) scale(1.25);opacity:1}
+  75%{transform:translateY(-52px) scale(1);opacity:1}
+  100%{transform:translateY(-74px) scale(.8);opacity:0}}
+.winflash{position:absolute;inset:0;background:radial-gradient(circle,#FFF6D8 0%,rgba(255,246,216,0) 62%);
+  z-index:76;pointer-events:none;animation:cflash .32s ease-out}
+@keyframes cflash{0%{opacity:.85}100%{opacity:0}}
+.confetti{position:absolute;width:12px;height:9px;z-index:77;pointer-events:none;
+  animation:confall 1.45s ease-in forwards}
+@keyframes confall{0%{transform:translate(0,0) rotate(0);opacity:1}
+  100%{transform:translate(var(--cx),var(--cy)) rotate(var(--cr));opacity:0}}
+.starburst{position:absolute;width:200px;height:200px;margin:-100px 0 0 -100px;z-index:77;pointer-events:none}
+.sbfly{animation:sbfly .65s ease-out forwards;transform-box:fill-box}
+@keyframes sbfly{0%{transform:translate(0,0) scale(.4);opacity:1}
+  100%{transform:translate(var(--sx),var(--sy)) scale(1);opacity:0}}
+/* 습격 — 화면 흔들림 + 초록 번쩍 + 큰 얼굴 */
+.sky.hit .worldg,.sky.hit .bgsvg{animation:jolt .7s ease-out}
+@keyframes jolt{0%{transform:none}12%{transform:translate(-26px,7px) rotate(-2.2deg)}
+  32%{transform:translate(28px,-5px) rotate(2.4deg)}54%{transform:translate(-13px,4px)}
+  76%{transform:translate(9px,-3px)}100%{transform:none}}
+.gulp{position:absolute;inset:0;z-index:95;pointer-events:none;
+  background:radial-gradient(circle at 50% 52%,rgba(120,220,140,.18),rgba(46,74,54,.72) 82%);
+  animation:cflash .8s ease-out forwards}
+
+/* ---------- 화면 공통 ---------- */
+.center{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:18px}
+.card{background:var(--paper-1);border:3.5px solid var(--ink);border-radius:26px;
+  box-shadow:0 7px 0 rgba(59,43,58,.4);padding:22px 26px;display:flex;flex-direction:column;
+  align-items:center;gap:12px;max-width:min(92vw,460px)}
+.bigbtn{display:flex;align-items:center;gap:9px;font-weight:900;font-size:1.15rem;
+  background:var(--butter);border:3.5px solid var(--ink);border-radius:20px;padding:13px 30px;
+  box-shadow:0 6px 0 var(--ink);cursor:pointer}
+.bigbtn:active{transform:translateY(3px);box-shadow:0 3px 0 var(--ink)}
+.bigbtn svg{width:30px;height:30px}
+/* ④ 예습 3초 자동 진행 게이지 */
+.autobar{width:min(60vw,240px);height:9px;border-radius:99px;background:var(--paper-2);
+  border:2.5px solid var(--ink);overflow:hidden}
+.autobar i{display:block;height:100%;width:100%;background:linear-gradient(90deg,var(--butter),var(--coral));
+  transform-origin:left;animation:autoshrink 3s linear forwards}
+@keyframes autoshrink{to{transform:scaleX(0)}}
+.prept{width:min(52vw,220px)}
+.prept svg{width:100%;height:auto;display:block}
+.readyov{position:absolute;inset:0;display:grid;place-items:center;z-index:88;pointer-events:none}
+
+.pauseov{position:fixed;inset:0;background:rgba(59,43,58,.55);z-index:200;display:grid;place-items:center}
+
+.modal{position:fixed;inset:0;background:rgba(59,43,58,.45);z-index:150;display:grid;place-items:center}
+.mbox{background:var(--paper-0);border:3.5px solid var(--ink);border-radius:22px;padding:20px 22px;
+  width:min(88vw,420px);max-height:82vh;overflow:auto}
+.mbox h3{margin:0 0 6px;font-size:1.05rem}
+.psub{font-weight:900;font-size:.8rem;color:var(--ink-soft);margin:10px 0 2px}
+.prow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0;
+  border-bottom:2px dashed var(--paper-3);font-size:calc(.84rem);font-weight:800}
+.prow>span{flex:0 0 66px}
+.pbar{flex:1;height:14px;border-radius:99px;background:var(--paper-2);border:2.5px solid var(--ink);overflow:hidden}
+.pbar i{display:block;height:100%;background:linear-gradient(90deg,var(--butter),var(--coral))}
+.pseg{display:flex;gap:5px}
+.pseg button{font:inherit;font-size:calc(.74rem);font-weight:800;padding:7px 10px;border-radius:11px;
+  border:2.5px solid var(--ink);background:var(--paper-1);cursor:pointer;min-height:38px}
+.pseg button.on{background:var(--butter)}
+.pnote{font-size:calc(.76rem);line-height:1.7;color:var(--ink-soft);margin:14px 0 12px;padding:12px;
+  background:var(--paper-1);border-radius:14px}
+.prow2{display:flex;gap:9px;justify-content:center}
+.pbtn{font:inherit;font-weight:800;padding:10px 18px;border-radius:14px;border:2.5px solid var(--ink);
+  background:var(--butter);box-shadow:0 4px 0 var(--ink);cursor:pointer}
+/* 좁은 화면 HUD 압축 — 하트 5개 + 카운터가 밀려 잘리던 문제 */
+@media (max-width:470px){
+  .bar{gap:4px;padding:calc(5px + env(safe-area-inset-top)) 6px 5px}
+  .dashrow{gap:5px}
+  .ib{width:38px;height:38px;border-radius:11px;padding:5px}
+  .bar .ib{width:34px;height:34px;border-radius:10px;padding:4px}
+  .hearts{gap:1px} .hearts svg{width:18px;height:18px}
+  .cnt{padding:2px 7px 2px 4px;gap:3px} .cnt svg{width:15px;height:15px}
+  .cnt .num{font-size:calc(.76rem)}
+  .cnt.fixed{width:min(27vw,98px)}
+  .timecell{width:min(20vw,74px)}
+  .clockwrap{padding:2px 7px 2px 3px;gap:3px} .clock{width:22px;height:22px}
+  .cnum{font-size:calc(.84rem)}
+  .stars svg{width:18px;height:18px}
+  .goal{padding:3px 8px 3px 5px;gap:5px;margin-left:3px} .goal .pic{width:28px;height:28px}
+  .slot{width:22px;height:30px}
+  .magbtn{width:52px;height:70px}
+  .gun.right{right:62px} .gun.left{left:62px}   /* v0.9 ⑤ — 좁은 화면에서도 탄창 옆 유지 */
+}
+@media (prefers-reduced-motion:reduce){:root{--dur:.001}}
+body.nomotion .zombie.walk .bodyg,body.nomotion .zombie.walk .legL,body.nomotion .zombie.walk .legR,
+body.nomotion .zombie.walk .armF,body.nomotion .zombie.walk .armB,body.nomotion .zombie.walk .drool{animation:none}
+
+/* ---------- v0.18계 ⑥⑨⑩ — 단어 통계·캐스케이드·진행 점 ---------- */
+.wstat{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;max-width:390px;width:94%}
+.wcard{position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 4px 6px;
+  border:3px solid #3B2B3A;border-radius:14px;background:#FBF3E4;box-shadow:0 4px 0 #3B2B3A}
+.wcard.no{opacity:.85;background:#F3E0DC}
+.wcard .wic{width:62%}.wcard .wic svg{width:100%;height:auto;display:block}
+.wcard .wname{font-weight:900;font-size:13px;color:#3B2B3A}
+.wbadge{position:absolute;right:-8px;top:-10px;width:26px;height:26px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;font-weight:900;font-size:15px;
+  border:3px solid #3B2B3A;color:#FBF3E4}
+.wbadge.ok{background:#57BE8B}.wbadge.no{background:#E4374B}
+.wperf{font-size:9px;font-weight:900;letter-spacing:.4px;color:#7A5A00;background:#FFCE5C;
+  border:2px solid #3B2B3A;border-radius:999px;padding:1px 6px;margin-top:1px}
+.stPct{font-weight:900;font-size:20px;color:#3B2B3A}
+.stBonus{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.bchip{font-weight:900;font-size:12px;border:2.5px solid #3B2B3A;border-radius:999px;
+  padding:3px 10px;background:#FBF3E4;color:#3B2B3A}
+.bchip.acc{background:#DFF3E9}.bchip.ref{background:#E3EDFB}
+.nsWrap{display:flex;flex-direction:column;align-items:center;gap:4px}
+.nsWrap .nsLab{font-weight:900;font-size:12px;letter-spacing:.6px;color:#3B2B3A}
+.nsWrap.dis{opacity:.38;filter:grayscale(.75)}
+@keyframes bigpop{0%{transform:scale(.7)}60%{transform:scale(1.28)}100%{transform:scale(1)}}
+.bigscore.pop{animation:bigpop .42s cubic-bezier(.2,1.7,.4,1)}
+.cascpop{position:absolute;width:14px;height:14px;transform:translate(-50%,-50%);z-index:60;pointer-events:none}
+.cascpop::before{content:"";position:absolute;inset:0;border-radius:50%;background:var(--c,#FFCE5C);
+  border:3px solid #3B2B3A;animation:cascb .62s ease-out forwards}
+.cascpop::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:4px solid var(--c,#FFCE5C);
+  opacity:.9;animation:cascr .62s ease-out forwards}
+@keyframes cascb{0%{transform:scale(.4)}45%{transform:scale(2.6)}100%{transform:scale(.2);opacity:0}}
+@keyframes cascr{0%{transform:scale(.6);opacity:.9}100%{transform:scale(4.6);opacity:0}}
+.perfshout{position:absolute;left:50%;top:20%;transform:translate(-50%,-50%);z-index:62;pointer-events:none;
+  animation:bigpop .5s cubic-bezier(.2,1.7,.4,1)}
+.wdot{width:12px;height:12px;border-radius:50%;border:2.5px solid #3B2B3A;background:#EDE3D2}
+.wdot.on{background:#FFCE5C}
+body.nomotion .cascpop::before,body.nomotion .cascpop::after,body.nomotion .perfshout{animation:none}
+
+/* v0.7 ③ — 화면 중앙 장전 안내(4게임 동일 문법) */
+.reloadcue{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%) scale(.8);
+  z-index:118;pointer-events:none;opacity:0;transition:opacity .25s,transform .25s;
+  display:flex;align-items:center;gap:10px}
+.reloadcue.on{opacity:1;transform:translate(-50%,-50%) scale(1)}
+.reloadcue .cuemag{width:min(24vw,112px);height:auto;display:block}
+.reloadcue .cuemag svg{width:100%;height:auto;display:block}
+.reloadcue .cuehand{width:min(22vw,94px);height:auto}
+.reloadcue .cuehand svg{width:100%;height:auto;display:block}
+.reloadcue .fing{transform-box:fill-box;transform-origin:50% 20%;
+  animation:cuedip 1.5s ease-in-out infinite}
+@keyframes cuedip{0%,100%{transform:translateY(0)}30%{transform:translateY(24px)}60%{transform:translateY(-6px)}}
+body.nomotion .reloadcue .fing{animation:none}
+
+/* ---------- v4차 ②③(사용자 지시) — 게임 진행 트랙 : 4게임 **동일 부품·동일 자리(대시보드 2행 오른쪽 끝)**.
+   맞춘 단어 ✓ / 틀린 단어 ✗ / 아직 안 한 단어 빈 칸. 색은 --pg-ok(게임 테마)만 다르다.
+   자리를 2행 오른쪽으로 정한 이유: 1행은 자원·버튼(홈·하트·점수·먹물·설정)이라 게임마다 폭이 다르고,
+   2행은 네 게임 모두 [시계][목표]로 같은 구조라 오른쪽 끝이 항상 비어 있다. ---------- */
+.wtrack{display:flex;gap:4px;align-items:center;margin-left:auto;flex:0 0 auto;padding-left:6px}
+.wmk{width:17px;height:17px;border-radius:50%;border:2.5px solid var(--ink);background:var(--paper-2);
+  display:grid;place-items:center;flex:0 0 auto}
+.wmk svg{width:78%;height:78%;display:block}
+.wmk.ok{background:var(--pg-ok,#7BE3B6)}
+.wmk.no{background:#E4374B}
+.wmk.cur{box-shadow:0 0 0 3px var(--pg-ok,#7BE3B6)}
+.wmk.pop{animation:wmkpop .42s cubic-bezier(.2,1.8,.4,1)}
+@keyframes wmkpop{0%{transform:scale(.55)}60%{transform:scale(1.35)}100%{transform:scale(1)}}
+body.nomotion .wmk.pop{animation:none}
+@media (max-width:430px){.wmk{width:14px;height:14px;border-width:2px}.wtrack{gap:3px;padding-left:4px}}
+
+/* ---------- v0.8 ①(사용자 지시) — 시작 전 화면을 Spellshot과 같은 문법으로.
+   구조·간격은 MG1 그대로, 색만 좀비 테마(붉은 신호등 + 독초록). ---------- */
+.pageC{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:12px;padding:calc(18px + env(safe-area-inset-top)) 16px calc(18px + env(safe-area-inset-bottom));
+  overflow:auto}
+.gametitle .shout{font-size:clamp(46px,11vw,88px);-webkit-text-stroke:9px var(--ink);letter-spacing:2px}
+.heroart{width:min(150px,34vw)}
+.heroart>svg{width:100%;height:auto;display:block}
+.purse{display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap}
+.radarSmall{width:min(52vw,240px);opacity:.96}
+.radarSmall>svg{width:100%;height:auto;display:block}   /* ⚠ 자식 한정 — 축 아이콘(중첩 svg)까지 100%가 되면 판이 깨진다 */
+.ib.big{width:80px;height:80px;border-radius:24px;box-shadow:0 5px 0 var(--ink);background:var(--butter);padding:14px}
+.ib.corner{position:absolute;right:14px;top:calc(12px + env(safe-area-inset-top));width:46px;height:46px;
+  border-radius:14px;background:var(--paper-0)}
+.ib.cornerL{right:auto;left:14px}
+.pageC .autobar{height:14px;border-width:3px}
+
+/* ============================================================================
+   MG5 Flip Match 고유 CSS — 공용 표준 부품(대시보드·시계·총·탄창·장전 안내·
+   진행 트랙)은 위 정본 규칙 그대로 두고, **여기서는 MG5 고유 부품만** 정의한다.
+   ============================================================================ */
+/* 배경 — 저녁 무렵 실내 */
+.sky{background:linear-gradient(#150F2C 0%,#231A44 16%,#3A2860 38%,#5C3A72 60%,#8A4A7A 80%,#C4657E 100%)}
+/* ★ v0.2 축제 부스 — 전구는 깜빡이고 관람차는 천천히 돈다 */
+.blb{animation:blb5 1.6s ease-in-out infinite}
+.blb[data-i="1"]{animation-delay:.4s}
+.blb[data-i="2"]{animation-delay:.8s}
+.blb[data-i="3"]{animation-delay:1.2s}
+@keyframes blb5{0%,100%{opacity:1}50%{opacity:.34}}
+.fw6{animation:fw5 30s linear infinite}
+@keyframes fw5{to{transform:rotate(360deg)}}
+/* 라운드 끝 전 카드 공개 — 목표 짝 두 장에 초록 테두리(어느 둘이 짝이었나) */
+.c5.ans .c5in{box-shadow:0 0 0 5px #7BE3B6,0 0 0 9px rgba(123,227,182,.42)}
+.c5.ans{animation:ans5 .5s ease-out 2}
+@keyframes ans5{50%{transform:translateY(-7px)}}
+body.nomotion .blb,body.nomotion .fw6,body.nomotion .c5.ans{animation:none}
+/* 목표 = 단어 그림 하나. 철자판 **안에는 상자를 두지 않는다**(MG2·MG4와 같은 규칙) */
+.goal .gword{display:flex;align-items:center;flex:0 0 auto;
+  border:none;background:none;box-shadow:none;padding:0;border-radius:0}
+.dashrow .gword>svg{width:auto!important;height:36px!important}
+/* 카드 판넬 — 뒤집기(뒷면=브랜드 마크 / 앞면=단어 또는 그림) */
+.c5{position:absolute;perspective:760px;pointer-events:none;z-index:12}
+.c5in{position:relative;width:100%;height:100%;transform-style:preserve-3d;
+  transition:transform calc(.34s * var(--dur)) cubic-bezier(.3,1.5,.45,1)}
+.c5.open .c5in{transform:rotateY(180deg)}
+.c5f{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;
+  border:4px solid var(--ink);border-radius:12px;box-shadow:0 4px 0 rgba(59,43,58,.32);
+  display:grid;place-items:center;overflow:hidden}
+.c5f.bk{background:#FFFFFF;padding:5%}
+.c5f.fr{background:var(--paper-0);transform:rotateY(180deg);padding:9%}
+.c5f>svg{width:100%!important;height:100%!important;display:block;object-fit:contain}
+.c5.hit{animation:c5hit calc(.42s * var(--dur)) ease-out}
+@keyframes c5hit{32%{transform:translateY(-10px) scale(1.05)}}
+.c5.bad .c5f{border-color:#E4374B;box-shadow:0 4px 0 rgba(228,55,75,.45)}
+.c5.done .c5f.fr{background:#EAF7D8}
+/* 아이템 카드 — 단어·그림과 한눈에 구분되게 바탕만 다르게 */
+.c5f.fr.item{background:#FFF3CE}
+/* 시간이 깎였다는 신호 — 시계칸이 붉게 튄다 */
+.timecell.pen .clockwrap{animation:pen5 calc(.6s * var(--dur)) ease-out}
+@keyframes pen5{0%,100%{background:var(--paper-1)}35%{background:#FFD3CC;transform:translateY(-3px)}}
+body.nomotion .timecell.pen .clockwrap{animation:none}
+body.nomotion .c5in{transition:none}
+body.nomotion .c5.hit{animation:none}
+/* 카드를 든 동물 — 카드보다 작게, 카드 뒤에 선다 */
+.pal{position:absolute;pointer-events:none;z-index:8}
+.pal>svg{width:100%;height:100%;display:block;overflow:visible}
+/* 판넬을 잡은 앞발 — 카드보다 위 */
+.paw{position:absolute;pointer-events:none;z-index:16}
+.paw>svg{width:100%;height:100%;display:block;overflow:visible}
+/* 타이틀 주인공 — 토끼 + 카드.
+   ★ v0.0.1: 동물 그림이 세로로 길어(viewBox 62×150) 폭으로 크기를 주면 키가 2.4배로 튄다.
+     360×640에서 화면 밖으로 28px 넘쳤다 → **높이로 크기를 잡는다**(vh 기준). */
+.heroart{width:auto}
+.herocard{position:relative;display:flex;align-items:flex-end;justify-content:center;
+  height:min(22vh,142px)}
+.herocard .hero5{height:100%;width:auto;display:block}
+.herocard .hcard{position:absolute;left:50%;bottom:-2px;transform:translateX(-36%);
+  height:56%;aspect-ratio:1;background:#FFF;border:4px solid var(--ink);border-radius:12px;
+  box-shadow:0 4px 0 rgba(59,43,58,.32);padding:5px}
+.herocard .hcard svg{width:100%;height:100%;display:block}
+@media (max-width:470px){
+  .dashrow .gword>svg{height:30px!important}
+}
+
+/* ============================================================================
+   9차 — 시작 전 화면 5게임 통일 + 총·탄창 자리 정본(MG3) 일치
+   실측이 잡은 것: 타이틀 문구가 좌·우상단 버튼 밑으로 파고들고(5게임 전부),
+   360×600에서 12~15px 넘치고(MG1~MG4), 주인공 키가 제각각(228/200/142)이었다.
+   ① 코너 버튼 자리(top 12 + 높이 46 = 58px)를 **위 여백으로 비운다** → 겹침 원천 차단
+   ② 글자·별자리·▶·간격을 줄여 360×600에서도 넘치지 않게
+   ③ ★주인공은 **높이로** 크기를 잡는다 — 폭으로 주면 그림 비율만큼 키가 튄다
+      (MG5에서 얻은 교훈: viewBox 62×150에 폭 126px을 주니 키가 305px)
+   ④ 총·탄창 가로 위치를 정본 값으로: 총 76px(좁은 화면 62) · 탄창 6px
+   ============================================================================ */
+.pageC{
+  padding-top:calc(66px + env(safe-area-inset-top));
+  padding-bottom:calc(12px + env(safe-area-inset-bottom));
+  gap:8px;
+  justify-content:safe center;
+}
+.gametitle{max-width:100%}
+.gametitle .shout{font-size:clamp(34px,10vw,80px);-webkit-text-stroke:7px var(--ink)}
+.heroart{height:min(26vh,170px);width:auto;
+  display:flex;align-items:flex-end;justify-content:center}
+/* ★ 인라인 style(width:100%;height:auto)이 박혀 있어 !important 없이는 못 이긴다.
+   안 이기면 주인공이 제 크기대로 자라 **타이틀 문구를 덮는다**(9차 1차 시도에서 실제로 그랬다). */
+.heroart>svg{height:100%!important;width:auto!important;max-width:100%;display:block}
+.herocard{height:100%}
+.radarSmall{width:min(44vw,200px)}
+.ib.big{width:68px;height:68px;border-radius:21px;padding:12px}
+.pageC .autobar{height:12px}
+.gun.right{right:calc(76px + env(safe-area-inset-right))}
+.gun.left{left:calc(76px + env(safe-area-inset-left))}
+.magbtn.right{right:calc(6px + env(safe-area-inset-right))}
+.magbtn.left{left:calc(6px + env(safe-area-inset-left))}
+@media (max-width:470px){
+  .gun.right{right:calc(62px + env(safe-area-inset-right))}
+  .gun.left{left:calc(62px + env(safe-area-inset-left))}
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+"use strict";
+/* ====================== 저장(전 게임 공유 키) ====================== */
+const KEY="wordborn_mg_r1_v0";
+const HEART_MAX_BASE=5, HEART_CAP=8, REGEN_MS=20*60*1000;
+const MAG_SIZE=25;
+const blankSave=()=>({v:1,
+  hearts:HEART_MAX_BASE, bonusHearts:0, lastRegen:0,
+  ink:0, seeds:0, seen:{},
+  stat:{spell:0,read:0,mean:0,mem:0,ref:0,listen:0},
+  best:0,
+  ammo:25, mags:9,
+  set:{sfx:1,voice:1,motion:1,ui:1,lefty:0}});
+let storageOK=true;
+function load(){let s=null;
+  try{const r=localStorage.getItem(KEY); if(r)s=JSON.parse(r);}catch(e){storageOK=false;}
+  if(!s||s.v!==1)s=blankSave();
+  const b=blankSave(); for(const k in b) if(s[k]==null) s[k]=b[k];
+  s.set=Object.assign(b.set,s.set||{}); s.stat=Object.assign(b.stat,s.stat||{});
+  return s;}
+/* v테스트 ①(사용자 지시, 8/18) — 테스트 버전: 새로 로드할 때마다 저장을 지우고 초기화한다 */
+try{localStorage.removeItem(KEY);}catch(e){}
+let SAVE=load();
+const persist=()=>{try{localStorage.setItem(KEY,JSON.stringify(SAVE));}catch(e){storageOK=false;}};
+const heartCap=()=>Math.min(HEART_CAP,HEART_MAX_BASE+SAVE.bonusHearts);
+function regen(now){
+  const cap=heartCap();
+  if(SAVE.hearts>=cap){SAVE.lastRegen=now;return;}
+  if(!SAVE.lastRegen){SAVE.lastRegen=now;return;}
+  const n=Math.floor((now-SAVE.lastRegen)/REGEN_MS);
+  if(n>0){SAVE.hearts=Math.min(cap,SAVE.hearts+n); SAVE.lastRegen+=n*REGEN_MS; persist();}
+}
+function applySet(){
+  document.documentElement.style.setProperty("--ui",[.92,1,1.14][SAVE.set.ui]||1);
+  document.documentElement.style.setProperty("--dur",SAVE.set.motion?1:.001);
+  document.body.classList.toggle("nomotion",!SAVE.set.motion);
+}
+const NS="http://www.w3.org/2000/svg";
+const INK="#3B2B3A", PAPER="#FBF3E4";
+const CSSV=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function E(t,a,k){const n=document.createElementNS(NS,t);
+  if(a)for(const x in a){if(a[x]!=null)n.setAttribute(x,a[x]);}
+  if(k)k.forEach(c=>c&&n.appendChild(c));return n;}
+function H(t,a,k){const n=document.createElement(t);
+  if(a)for(const x in a){ if(x==="html")n.innerHTML=a[x]; else if(x==="text")n.textContent=a[x];
+    else if(x==="on")for(const e in a[x])n.addEventListener(e,a[x][e]); else if(a[x]!=null)n.setAttribute(x,a[x]); }
+  if(k)k.forEach(c=>c&&n.appendChild(c));return n;}
+const hx=c=>{c=c.replace("#","");return[parseInt(c.slice(0,2),16),parseInt(c.slice(2,4),16),parseInt(c.slice(4,6),16)];};
+const rgbs=a=>"#"+a.map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,"0")).join("");
+const shade=(c,f)=>rgbs(hx(c).map(v=>v*(1-f)));
+const tint =(c,f)=>rgbs(hx(c).map(v=>v+(255-v)*f));
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const rnd=(a,b)=>a+Math.random()*(b-a);
+const pick=a=>a[Math.floor(Math.random()*a.length)];
+const shuf=a=>{for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));
+  [a[i],a[j]]=[a[j],a[i]];}return a;};
+
+/* ====================== 소리(공용 승계) ====================== */
+const Snd={ctx:null,
+  init(){if(this.ctx)return;try{const C=window.AudioContext||window.webkitAudioContext;if(C)this.ctx=new C();}catch(e){}},
+  t(f,d,ty,v){if(!SAVE.set.sfx)return;this.init();const c=this.ctx;if(!c)return;
+    try{if(c.state==="suspended")c.resume();
+      const o=c.createOscillator(),g=c.createGain();o.type=ty||"sine";o.frequency.value=f;
+      g.gain.setValueAtTime(0,c.currentTime);g.gain.linearRampToValueAtTime(v||.15,c.currentTime+.012);
+      g.gain.exponentialRampToValueAtTime(.0001,c.currentTime+(d||.18));
+      o.connect(g);g.connect(c.destination);o.start();o.stop(c.currentTime+(d||.18)+.02);}catch(e){}},
+  tap(){this.t(660,.1,"triangle",.11)},
+  no(){this.t(190,.2,"square",.1)},
+  soft(){this.t(392,.16,"sine",.08)}};
+const Cue2={
+  wrong(){Snd.t(160,.26,"square",.10); setTimeout(()=>Snd.t(110,.3,"sawtooth",.08),110);},
+  word(){[659,784,988,1319].forEach((f,i)=>setTimeout(()=>Snd.t(f,.28,"triangle",.13),i*90));},
+  gold(){[784,1046,1319,1568,2093].forEach((f,i)=>setTimeout(()=>Snd.t(f,.34,"sine",.12),i*70));},
+  combo(n){Snd.t(500+Math.min(n,10)*90,.12,"triangle",.10);},
+  ready(){Snd.t(392,.3,"sine",.09); setTimeout(()=>Snd.t(523,.34,"sine",.09),260);},
+  beat(){Snd.t(660,.09,"square",.09); setTimeout(()=>Snd.t(440,.12,"sine",.07),70);},
+  go(){[523,659,784,1046].forEach((f,i)=>setTimeout(()=>Snd.t(f,.2,"triangle",.14),i*70));},
+  snap(){Snd.t(1568,.06,"triangle",.11); setTimeout(()=>Snd.t(2093,.09,"sine",.08),50);},
+  doorno(){Snd.t(233,.14,"square",.09); setTimeout(()=>Snd.t(175,.22,"square",.08),120);},
+  boing(){Snd.t(180,.07,"sine",.13); setTimeout(()=>Snd.t(320,.16,"sine",.11),60);},
+  shot(){ if(!SAVE.set.sfx)return; Snd.init(); const c=Snd.ctx; if(!c)return;
+    try{ if(c.state==="suspended")c.resume();
+      const t=c.currentTime;
+      const dur=.12, buf=c.createBuffer(1,Math.floor(c.sampleRate*dur),c.sampleRate);
+      const d=buf.getChannelData(0);
+      for(let j=0;j<d.length;j++)d[j]=(Math.random()*2-1)*Math.pow(1-j/d.length,1.6);
+      const src=c.createBufferSource(); src.buffer=buf;
+      const lp=c.createBiquadFilter(); lp.type="lowpass"; lp.frequency.value=2600;
+      const gn=c.createGain(); gn.gain.setValueAtTime(.55,t);
+      gn.gain.exponentialRampToValueAtTime(.001,t+dur);
+      src.connect(lp); lp.connect(gn); gn.connect(c.destination);
+      src.start(t); src.stop(t+dur+.02); }catch(e){}
+    /* ⑤ 물총 — 화약의 저역 쿵을 빼고 물이 뿜어지는 높은 소리로 바꾼다(로직 불변) */
+    Snd.t(760,.07,"sine",.12); Snd.t(1240,.05,"sine",.07); },
+  impact(){ if(!SAVE.set.sfx)return; Snd.init(); const c=Snd.ctx;
+    if(c){try{ const t=c.currentTime;
+      const dur=.06, buf=c.createBuffer(1,Math.floor(c.sampleRate*dur),c.sampleRate);
+      const d=buf.getChannelData(0);
+      for(let j=0;j<d.length;j++)d[j]=(Math.random()*2-1)*Math.pow(1-j/d.length,2.5);
+      const src=c.createBufferSource(); src.buffer=buf;
+      const bp=c.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=3200; bp.Q.value=1;
+      const gn=c.createGain(); gn.gain.setValueAtTime(.5,t);
+      gn.gain.exponentialRampToValueAtTime(.001,t+dur);
+      src.connect(bp); bp.connect(gn); gn.connect(c.destination);
+      src.start(t); src.stop(t+dur+.02); }catch(e){}}
+    Snd.t(120,.18,"sine",.22); setTimeout(()=>Snd.t(1500,.08,"triangle",.1),20); },
+  fanfare(){[392,523,659,784,1046].forEach((f,i)=>setTimeout(()=>Snd.t(f,.16,"triangle",.14),i*55));
+    setTimeout(()=>{Snd.t(1046,.5,"sine",.12);Snd.t(1319,.5,"sine",.10);Snd.t(1568,.6,"sine",.09);},300);
+    [2093,2637,3136].forEach((f,i)=>setTimeout(()=>Snd.t(f,.4,"sine",.06),430+i*70));},
+  smash(){Snd.t(180,.5,"sawtooth",.16); setTimeout(()=>Snd.t(90,.7,"square",.12),60);
+    [1400,1100,800].forEach((f,i)=>setTimeout(()=>Snd.t(f,.18,"triangle",.07),120+i*70));},
+  clap(){ if(!SAVE.set.sfx)return; Snd.init(); const c=Snd.ctx; if(!c)return;
+    try{ if(c.state==="suspended")c.resume();
+      for(let i=0;i<4;i++){ const t=c.currentTime+.04+i*.12+Math.random()*.03;
+        const dur=.085, buf=c.createBuffer(1,Math.floor(c.sampleRate*dur),c.sampleRate);
+        const d=buf.getChannelData(0);
+        for(let j=0;j<d.length;j++)d[j]=(Math.random()*2-1)*Math.pow(1-j/d.length,2.2);
+        const src=c.createBufferSource(); src.buffer=buf;
+        const bp=c.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=1700+i*160; bp.Q.value=1.1;
+        const gn=c.createGain(); gn.gain.setValueAtTime(.0001,t);
+        gn.gain.linearRampToValueAtTime(.5,t+.006);
+        gn.gain.exponentialRampToValueAtTime(.0001,t+dur);
+        src.connect(bp); bp.connect(gn); gn.connect(c.destination);
+        src.start(t); src.stop(t+dur+.02); } }catch(e){} },
+  pop(){Snd.t(1180,.05,"sine",.13); setTimeout(()=>Snd.t(1660,.09,"triangle",.09),40);},
+  /* ===== Red Light 전용 큐 ===== */
+  alarm(){Snd.t(880,.13,"square",.09); setTimeout(()=>Snd.t(1174,.18,"square",.08),140);},
+  taunt(){[523,466,523,587].forEach((f,i)=>setTimeout(()=>Snd.t(f,.12,"square",.07),i*105));},
+  /* 신호등 전환 — 기계식 딸깍 */
+  gate(){Snd.t(300,.05,"square",.10); setTimeout(()=>Snd.t(210,.09,"square",.08),55);},
+  /* 유리문 슬라이드 — 노이즈 스윕 */
+  open(){ if(!SAVE.set.sfx)return; Snd.init(); const c=Snd.ctx; if(!c)return;
+    try{ if(c.state==="suspended")c.resume();
+      const t=c.currentTime, dur=.42;
+      const bl=Math.floor(c.sampleRate*dur), buf=c.createBuffer(1,bl,c.sampleRate);
+      const d=buf.getChannelData(0);
+      for(let j=0;j<bl;j++)d[j]=(Math.random()*2-1)*(1-Math.abs(j/bl-.35)*1.1);
+      const src=c.createBufferSource(); src.buffer=buf;
+      const bp=c.createBiquadFilter(); bp.type="bandpass"; bp.Q.value=1.4;
+      bp.frequency.setValueAtTime(700,t); bp.frequency.exponentialRampToValueAtTime(2600,t+dur);
+      const gn=c.createGain(); gn.gain.setValueAtTime(.001,t);
+      gn.gain.linearRampToValueAtTime(.22,t+.10); gn.gain.exponentialRampToValueAtTime(.001,t+dur);
+      src.connect(bp); bp.connect(gn); gn.connect(c.destination);
+      src.start(t); src.stop(t+dur+.02); }catch(e){} },
+  /* 회피 — 코믹 휙 */
+  dodge(){Snd.t(420,.09,"sine",.10); setTimeout(()=>Snd.t(980,.13,"sine",.09),60);
+    setTimeout(()=>Snd.t(1500,.10,"triangle",.07),140);},
+  /* 유리에 총알이 튕김 */
+  tink(){Snd.t(2100,.05,"triangle",.10); setTimeout(()=>Snd.t(2900,.08,"sine",.06),40);},
+  /* 습격 직전 으르렁(코믹 — 저음 흔들림) */
+  growl(){ if(!SAVE.set.sfx)return; Snd.init(); const c=Snd.ctx; if(!c)return;
+    try{ if(c.state==="suspended")c.resume();
+      const t=c.currentTime, dur=.55;
+      const o=c.createOscillator(), g=c.createGain(), lfo=c.createOscillator(), lg=c.createGain();
+      o.type="sawtooth"; o.frequency.setValueAtTime(120,t);
+      o.frequency.exponentialRampToValueAtTime(72,t+dur);
+      lfo.type="sine"; lfo.frequency.value=17; lg.gain.value=17;
+      lfo.connect(lg); lg.connect(o.frequency);
+      g.gain.setValueAtTime(.0001,t); g.gain.linearRampToValueAtTime(.20,t+.05);
+      g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+      o.connect(g); g.connect(c.destination);
+      o.start(t); lfo.start(t); o.stop(t+dur+.02); lfo.stop(t+dur+.02); }catch(e){} },
+  /* 덥석 — 코믹 마무리 */
+  chomp(){Snd.t(150,.10,"square",.18); setTimeout(()=>Snd.t(96,.16,"square",.15),90);
+    setTimeout(()=>Snd.t(300,.12,"triangle",.10),190);},
+  /* 심장박동 — 가까워질수록 빨라지고 커진다. 박진감의 절반은 이 소리에서 나온다 */
+  drum(n){ const v=.05+.16*n;
+    Snd.t(58+18*n,.16,"sine",v); setTimeout(()=>Snd.t(44+14*n,.20,"sine",v*.72),115); },
+  /* 무리가 한 발짝 밀고 들어올 때 */
+  surge(){Snd.t(196,.14,"sawtooth",.07); setTimeout(()=>Snd.t(147,.20,"sine",.08),80);},
+  /* 격노 — 오답 맞은 놈이 돌진 시작 */
+  rage(){[330,392,466,554].forEach((f,i)=>setTimeout(()=>Snd.t(f,.10,"sawtooth",.09),i*55));
+    setTimeout(()=>Snd.t(110,.34,"square",.13),200);},
+  /* 오답 맞은 놈이 아파하며 뒤로 — 짧은 비명 + 밀리는 소리 */
+  hurt(){Snd.t(700,.07,"square",.11); setTimeout(()=>Snd.t(440,.10,"sawtooth",.10),55);
+    setTimeout(()=>Snd.t(240,.18,"sine",.09),130);},
+  /* 던지는 소리 */
+  whoosh(){Snd.t(320,.10,"sine",.07); setTimeout(()=>Snd.t(560,.14,"sine",.06),70);},
+  /* 만화식 몸싸움 */
+  scuffle(){[300,420,260,480,340].forEach((f,i)=>setTimeout(()=>Snd.t(f,.06,"square",.07),i*70));}
+};
+function say(t){if(!SAVE.set.voice)return;
+  try{ if(!window.speechSynthesis)return;
+    const go=()=>{ const u=new SpeechSynthesisUtterance(t);
+      u.lang="en-US"; u.pitch=1.85; u.rate=.8;
+      speechSynthesis.cancel(); speechSynthesis.speak(u); };
+    if(speechSynthesis.getVoices().length===0){
+      let done=false;
+      const h=()=>{ if(done)return; done=true;
+        try{speechSynthesis.removeEventListener("voiceschanged",h);}catch(e){}
+        go(); };
+      try{speechSynthesis.addEventListener("voiceschanged",h);}catch(e){}
+      setTimeout(h,700);
+    } else go();
+  }catch(e){}}
+
+
+/* ====================== 승계 블록: 기하 알파벳·부위 그림(MG2 v0.4 원본) ====================== */
+/* ===== 아트 코어 (스타일 프루프 v0.1 아트 바이블) ===== */
+const G={
+ a:{d:"M34 48a24 24 0 1 0 .01 0 M58 48V100",w:78,counter:1},
+ b:{d:"M10 8V100 M34 48a24 24 0 1 0 .01 0",w:78,counter:1,asc:1},
+ c:{d:"M52 54A24 24 0 1 0 52 90",w:70},
+ d:{d:"M58 8V100 M34 48a24 24 0 1 0 .01 0",w:78,counter:1,asc:1},
+ e:{d:"M10 72H58A24 24 0 1 0 52 90",w:74,counter:1},
+ f:{d:"M56 20Q32 10 32 40V100 M12 50H52",w:62,asc:1},
+ g:{d:"M58 48V116Q58 136 36 136Q20 136 14 126 M34 48a24 24 0 1 0 .01 0",w:78,counter:1,desc:1},
+ h:{d:"M10 8V100 M10 74Q10 48 34 48Q58 48 58 74V100",w:78,asc:1},
+ i:{d:"M30 52V100 M30 20v.01",w:44},
+ j:{d:"M38 52V116Q38 136 18 132 M38 26v.01",w:50,desc:1},
+ k:{d:"M10 8V100 M54 48L16 76 M28 66L56 100",w:72,asc:1},
+ l:{d:"M26 8V84Q26 100 48 100",w:60,asc:1},
+ m:{d:"M10 48V100 M10 72Q10 48 30 48Q48 48 48 72V100 M48 72Q48 48 68 48Q86 48 86 72V100",w:104},
+ n:{d:"M10 48V100 M10 74Q10 48 34 48Q58 48 58 74V100",w:78},
+ o:{d:"M34 48a24 24 0 1 0 .01 0",w:78,counter:1},
+ p:{d:"M10 48V138 M34 48a24 24 0 1 0 .01 0",w:78,counter:1,desc:1},
+ q:{d:"M58 48V138 M34 48a24 24 0 1 0 .01 0",w:78,counter:1,desc:1},
+ r:{d:"M10 48V100 M10 74Q14 48 44 50",w:60},
+ s:{d:"M54 56Q34 42 20 52Q6 66 24 74Q46 82 48 92Q44 106 12 94",w:66},
+ t:{d:"M32 20V86Q32 100 48 100 M12 50H54",w:64,asc:1},
+ u:{d:"M10 48V76Q10 100 34 100Q58 100 58 76V48 M58 76V100",w:78},
+ v:{d:"M10 48L34 100L58 48",w:76},
+ w:{d:"M8 48L26 100L44 56L62 100L80 48",w:96},
+ x:{d:"M10 48L56 100 M56 48L10 100",w:74},
+ y:{d:"M10 48L34 96 M58 48L26 136",w:76,desc:1},
+ z:{d:"M12 50H54L12 100H56",w:72},
+ " ":{d:"",w:38}
+};
+const STROKE=21, OUT=13, EDGE={x:3,y:5};
+
+function glyph(ch,color,o){
+  o=o||{}; const g=G[ch]; if(!g||!g.d)return null;
+  const base={fill:"none","stroke-linecap":"round","stroke-linejoin":"round"};
+  const dark=shade(color,.30), lite=tint(color,.55);
+  const grp=E("g",{class:"gl"});
+  if(o.shadow!==false)
+    grp.appendChild(E("path",Object.assign({},base,{d:g.d,stroke:INK,"stroke-width":STROKE+OUT+4,opacity:.11,transform:"translate(6,10)"})));
+  grp.appendChild(E("path",Object.assign({},base,{d:g.d,stroke:dark,"stroke-width":STROKE+OUT,transform:`translate(${EDGE.x},${EDGE.y})`})));
+  grp.appendChild(E("path",Object.assign({},base,{d:g.d,stroke:INK,"stroke-width":STROKE+OUT})));
+  grp.appendChild(E("path",Object.assign({},base,{d:g.d,stroke:color,"stroke-width":STROKE,class:"lyr-face",
+    style:"transition:stroke calc(.5s * var(--dur)) ease"})));
+  grp.appendChild(E("path",Object.assign({},base,{d:g.d,stroke:lite,"stroke-width":STROKE*.30,opacity:.6,transform:"translate(-2.5,-3.5)"})));
+  return grp;
+}
+/* 위치는 transform 속성(holder), 애니메이션은 CSS transform(hop). 한 요소에 둘을 같이 쓰면
+   Blink에서 CSS가 속성을 덮어써 글자가 원점으로 무너진다. 반드시 분리한다. */
+function typeset(word,color,o){
+  o=o||{}; const g=E("g"); let x=0; const letters=[];
+  for(const ch of String(word).toLowerCase()){
+    const m=G[ch]; if(!m)continue;
+    const gl=glyph(ch,color,o);
+    if(gl){ const holder=E("g",{transform:`translate(${x},0)`});
+      const hop=E("g"); hop.appendChild(gl); holder.appendChild(hop); g.appendChild(holder);
+      letters.push({ch,x,meta:m,node:holder,hop,gl}); }
+    x+=m.w+8;
+  }
+  return {node:g,width:Math.max(0,x-8),letters};
+}
+function wordSVG(word,color,maxW){
+  const ts=typeset(word,color);
+  const s=E("svg",{viewBox:`0 -14 ${ts.width+24} 172`,xmlns:NS,
+    style:`width:${Math.min(maxW||320,ts.width*.86)}px;max-width:100%;height:auto;display:block;margin:0 auto`});
+  s.appendChild(E("g",{transform:"translate(12,0)"},[ts.node]));
+  return s;
+}
+
+
+function eyesPart(cx,cy,gap,r,cls){
+  const g=E("g",{class:"eyes "+(cls||"")});
+  [-gap,gap].forEach(dx=>{
+    g.appendChild(E("ellipse",{cx:cx+dx,cy,rx:r,ry:r*1.06,fill:PAPER,stroke:INK,"stroke-width":5}));
+    g.appendChild(E("circle",{cx:cx+dx+r*.13,cy:cy+r*.16,r:r*.46,fill:INK}));
+    g.appendChild(E("circle",{cx:cx+dx-r*.24,cy:cy-r*.3,r:r*.19,fill:PAPER,opacity:.95}));
+  });
+  return g;
+}
+const mouthPart=(cx,cy,w,cls)=>E("path",{class:cls||"",d:`M${cx-w/2} ${cy}Q${cx} ${cy+w*.62} ${cx+w/2} ${cy}`,
+  fill:"none",stroke:INK,"stroke-width":6,"stroke-linecap":"round"});
+function nosePart(cx,cy,r,cls){const g=E("g",{class:cls||""});
+  g.appendChild(E("ellipse",{cx,cy,rx:r,ry:r*.82,fill:CSSV("--blush"),stroke:INK,"stroke-width":5}));
+  g.appendChild(E("ellipse",{cx:cx-r*.3,cy:cy-r*.28,rx:r*.26,ry:r*.2,fill:PAPER,opacity:.75}));return g;}
+function blushPart(cx,cy,gap,r,cls){const g=E("g",{class:cls||""});
+  [-gap,gap].forEach(dx=>g.appendChild(E("ellipse",{cx:cx+dx,cy,rx:r,ry:r*.62,fill:CSSV("--blush"),opacity:.34})));return g;}
+function earPart(cx,cy,gap,r,cls){const g=E("g",{class:cls||""});
+  [-gap,gap].forEach((dx,i)=>{
+    g.appendChild(E("ellipse",{cx:cx+dx,cy,rx:r*.72,ry:r,fill:CSSV("--drop"),stroke:INK,"stroke-width":7}));
+    g.appendChild(E("path",{d:`M${cx+dx+(i?-r*.2:r*.2)} ${cy-r*.34}q${i?-r*.3:r*.3} ${r*.34} 0 ${r*.66}`,
+      fill:"none",stroke:INK,"stroke-width":4.5,"stroke-linecap":"round",opacity:.55}));});
+  return g;}
+function partIcon(kind){
+  const svg=E("svg",{viewBox:"0 0 200 200",xmlns:NS});
+  const C=CSSV("--drop");
+  const g=E("g");
+  /* Wordrop은 물방울이다. 아이콘에서만 동그란 머리로 바꾸면 IP가 깨진다. */
+  const DROPD="M100 16C134 62 158 102 158 130A58 58 0 1 1 42 130C42 102 66 62 100 16Z";
+  const head=()=>{
+    g.appendChild(E("path",{d:DROPD,fill:CSSV("--drop-deep"),transform:"translate(4,7)",
+      stroke:INK,"stroke-width":9,"stroke-linejoin":"round"}));
+    g.appendChild(E("path",{d:DROPD,fill:C,stroke:INK,"stroke-width":9,"stroke-linejoin":"round"}));
+    g.appendChild(E("path",{d:"M76 92Q64 118 68 144",fill:"none",stroke:PAPER,"stroke-width":12,
+      "stroke-linecap":"round",opacity:.7}));};
+  if(kind==="face"){head();      /* face — Wordrop 기본형(눈+일자 입만, 사용자 지시 ⑨). smile과 완전 분리 */
+    g.appendChild(eyesPart(100,120,26,14));
+    g.appendChild(E("path",{d:"M78 146Q100 170 122 146",fill:"none",stroke:INK,
+      "stroke-width":7,"stroke-linecap":"round"}));}   /* v0.18계 ⑧ — face도 웃는 얼굴(사용자 지시) */
+  else if(kind==="eye"){          /* eyes — 두 개를 그린다. 단어가 복수면 그림도 복수여야 한다 */
+    [52,148].forEach((cx,i)=>{
+      g.appendChild(E("ellipse",{cx,cy:104,rx:46,ry:34,fill:PAPER,stroke:INK,"stroke-width":8}));
+      g.appendChild(E("circle",{cx,cy:104,r:22,fill:CSSV("--sky"),stroke:INK,"stroke-width":7}));
+      g.appendChild(E("circle",{cx,cy:104,r:10,fill:INK}));
+      g.appendChild(E("circle",{cx:cx-8,cy:96,r:5,fill:PAPER}));
+      g.appendChild(E("path",{d:`M${cx-44} 78Q${cx} 44 ${cx+44} 78`,fill:"none",stroke:INK,
+        "stroke-width":8,"stroke-linecap":"round"}));
+      g.appendChild(E("path",{d:`M${cx+(i?38:-38)} 66l${i?12:-12} -14`,stroke:INK,"stroke-width":7,"stroke-linecap":"round"}));});}
+  else if(kind==="nose"){          /* nose — 옆모습 코(재재작화 2026-08-03): 대각 콧대→둥근 코끝→콧방울→콧구멍 */
+    g.appendChild(E("path",{d:"M128 24Q122 62 86 100Q60 126 66 142Q72 158 94 158Q107 158 113 149Q121 157 137 153Q153 148 150 132Q147 118 130 115Q141 92 145 56Q147 36 141 24Z",
+      fill:C,stroke:INK,"stroke-width":9,"stroke-linejoin":"round"}));
+    g.appendChild(E("path",{d:"M118 44Q112 74 92 100",fill:"none",stroke:PAPER,"stroke-width":8,"stroke-linecap":"round",opacity:.6}));
+    g.appendChild(E("ellipse",{cx:100,cy:141,rx:9,ry:6,fill:INK,transform:"rotate(-16 100 141)"}));}
+  else if(kind==="mouth"){        /* mouth(v0.3 재작화) — 활짝 벌린 입 클로즈업: 입술+입안+윗니+혀
+       네 요소(형태 세 겹 이상 규칙). smile(반달눈 있는 '표정')과 완전 분리 — 여긴 입 단독 */
+    /* 입술 — 큐피드활(윗입술 가운데 옴폭) 있는 도톰한 입술 */
+    g.appendChild(E("path",{d:"M22 92Q34 56 66 60Q86 62 100 74Q114 62 134 60Q166 56 178 92Q180 124 150 146Q122 164 100 164Q78 164 50 146Q20 124 22 92Z",
+      fill:CSSV("--coral"),stroke:INK,"stroke-width":9,"stroke-linejoin":"round"}));
+    /* 입안 — 어두운 속 */
+    g.appendChild(E("path",{d:"M44 96Q100 76 156 96Q152 126 128 140Q100 150 72 140Q48 126 44 96Z",
+      fill:"#8E3B55",stroke:INK,"stroke-width":6,"stroke-linejoin":"round"}));
+    /* 윗니 — 흰 이 4개(칸막이 3줄) */
+    g.appendChild(E("path",{d:"M50 97Q100 80 150 97L146 111Q100 96 54 111Z",
+      fill:PAPER,stroke:INK,"stroke-width":4.5,"stroke-linejoin":"round"}));
+    g.appendChild(E("path",{d:"M76 90l3 14M100 86v14M124 90l-3 14",
+      fill:"none",stroke:INK,"stroke-width":3.5,"stroke-linecap":"round"}));
+    /* 혀 — 가운데 골 있는 분홍 혀 */
+    g.appendChild(E("path",{d:"M70 136Q100 118 130 136Q126 152 100 154Q74 152 70 136Z",
+      fill:CSSV("--rose"),stroke:INK,"stroke-width":6,"stroke-linejoin":"round"}));
+    g.appendChild(E("path",{d:"M100 130v15",stroke:INK,"stroke-width":4,"stroke-linecap":"round",opacity:.45}));
+    /* 아랫입술 윤기 */
+    g.appendChild(E("path",{d:"M64 152Q100 162 136 152",fill:"none",stroke:PAPER,
+      "stroke-width":7,"stroke-linecap":"round",opacity:.55}));}
+  else if(kind==="ear"){          /* ears — 진짜 귀 모양(v0.1 재작화): 겉바퀴+안쪽 접힘+귓불 한 쌍 */
+    const outer="M46 20Q92 0 108 46Q120 86 98 120Q84 142 62 152Q42 160 34 144Q28 130 40 120Q24 112 20 86Q16 42 46 20Z";
+    const fold ="M54 44Q86 42 92 70Q96 94 80 114";
+    const lobe ="M48 130Q58 122 68 128";
+    [[4,1],[196,-1]].forEach(([tx,sx])=>{
+      const eg=E("g",{transform:`translate(${tx},18) scale(${sx*.78},.78)`});
+      eg.appendChild(E("path",{d:outer,fill:C,stroke:INK,"stroke-width":10,"stroke-linejoin":"round"}));
+      eg.appendChild(E("path",{d:fold,fill:"none",stroke:INK,"stroke-width":7,"stroke-linecap":"round",opacity:.6}));
+      eg.appendChild(E("path",{d:lobe,fill:"none",stroke:INK,"stroke-width":6,"stroke-linecap":"round",opacity:.5}));
+      g.appendChild(eg);});}
+  else if(kind==="hair"){          /* hair — 얼굴 없이 머리카락만 부각(사용자 지시 ③) */
+    const d="M100 26Q42 30 36 92Q32 136 46 166Q52 178 62 170Q57 146 60 128Q63 112 70 102Q68 140 74 166Q78 180 90 174Q87 150 89 132Q92 114 100 106Q100 142 106 166Q110 180 122 173Q119 148 121 130Q125 112 132 102Q134 138 142 162Q148 176 158 167Q168 134 164 92Q158 30 100 26Z";
+    g.appendChild(E("path",{d,fill:CSSV("--butter"),stroke:INK,"stroke-width":9,"stroke-linejoin":"round"}));
+    g.appendChild(E("path",{d:"M62 58Q78 42 100 40",fill:"none",stroke:"#FFF2C8","stroke-width":9,"stroke-linecap":"round",opacity:.8}));
+    const c2="M100 28Q96 4 122 2Q142 1 136 18Q132 28 120 24";
+    g.appendChild(E("path",{d:c2,fill:"none",stroke:INK,"stroke-width":17,"stroke-linecap":"round","stroke-linejoin":"round"}));
+    g.appendChild(E("path",{d:c2,fill:"none",stroke:CSSV("--butter"),"stroke-width":9,"stroke-linecap":"round","stroke-linejoin":"round"}));}
+  else if(kind==="smile"){       /* smile v0.17계(사용자 지시 ②) — Wordrop을 쓰지 않는다.
+       face(파란 물방울 Wordrop)와 smile이 같은 실루엣이라 직관적으로 구분이 안 됐다 →
+       smile = 만국 공통 노란 스마일 원. 모양(원↔물방울)·색(노랑↔파랑)이 모두 달라진다 */
+    g.appendChild(E("circle",{cx:100,cy:104,r:82,fill:CSSV("--butter"),
+      stroke:INK,"stroke-width":9}));
+    g.appendChild(E("path",{d:"M44 60Q30 82 32 108",fill:"none",stroke:"#FFF2C8",
+      "stroke-width":11,"stroke-linecap":"round",opacity:.9}));
+    [[68,86],[132,86]].forEach(([x,y])=>g.appendChild(E("path",
+      {d:`M${x-16} ${y}Q${x} ${y-20} ${x+16} ${y}`,
+       fill:"none",stroke:INK,"stroke-width":9,"stroke-linecap":"round"})));
+    g.appendChild(E("path",{d:"M52 120Q100 178 148 120Q100 140 52 120Z",fill:CSSV("--coral"),
+      stroke:INK,"stroke-width":8,"stroke-linejoin":"round"}));
+    g.appendChild(blushPart(100,124,66,14));}
+  svg.appendChild(g); return svg;
+}
+
+
+
+/* ====================== 아이콘(언어 0) ====================== */
+const ICON={
+  seed:'<path d="M32 8c14 10 18 24 12 34-6 10-18 10-24 0C14 32 18 18 32 8Z" fill="#6FD9C0" stroke="#3B2B3A" stroke-width="6" stroke-linejoin="round"/><path d="M32 20v30" stroke="#3B2B3A" stroke-width="5" stroke-linecap="round"/><path d="M32 56c0-8 6-12 12-12" stroke="#3B2B3A" stroke-width="5" stroke-linecap="round" fill="none"/>',
+  s_spell:'<path d="M14 50l4-12L42 14l8 8-24 24Z" fill="#FFCE5C" stroke="#3B2B3A" stroke-width="5" stroke-linejoin="round"/><path d="M12 56h34" stroke="#3B2B3A" stroke-width="5" stroke-linecap="round"/>',
+  s_read:'<ellipse cx="32" cy="32" rx="26" ry="17" fill="#FBF3E4" stroke="#3B2B3A" stroke-width="5"/><circle cx="32" cy="32" r="9" fill="#6FB8E8" stroke="#3B2B3A" stroke-width="5"/>',
+  s_mean:'<path d="M32 8a16 16 0 0 1 10 28v6H22v-6A16 16 0 0 1 32 8Z" fill="#FFCE5C" stroke="#3B2B3A" stroke-width="5" stroke-linejoin="round"/><path d="M24 50h16M26 57h12" stroke="#3B2B3A" stroke-width="5" stroke-linecap="round"/>',
+  s_mem:'<rect x="10" y="12" width="26" height="36" rx="5" fill="#F79FC4" stroke="#3B2B3A" stroke-width="5"/><rect x="28" y="18" width="26" height="36" rx="5" fill="#FBF3E4" stroke="#3B2B3A" stroke-width="5"/>',
+  s_ref:'<path d="M36 6L14 36h14l-4 22 24-32H34Z" fill="#FFCE5C" stroke="#3B2B3A" stroke-width="5" stroke-linejoin="round"/>',
+  s_listen:'<path d="M20 26a12 12 0 0 1 24 0c0 12-8 12-8 20a6 6 0 0 1-12 0" fill="#6FD9C0" stroke="#3B2B3A" stroke-width="5" stroke-linejoin="round"/><circle cx="24" cy="52" r="5" fill="#3B2B3A"/>',
+  home:'<path d="M6 26L32 6l26 20v30a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4Z" fill="#FFCE5C" stroke="#3B2B3A" stroke-width="6" stroke-linejoin="round"/><path d="M25 60V40h14v20" fill="#FBF3E4" stroke="#3B2B3A" stroke-width="6" stroke-linejoin="round"/>',
+  gear:'<circle cx="32" cy="32" r="12" fill="#FBF3E4" stroke="#3B2B3A" stroke-width="6"/><path d="M32 4v10M32 50v10M4 32h10M50 32h10M12 12l7 7M45 45l7 7M52 12l-7 7M19 45l-7 7" stroke="#3B2B3A" stroke-width="6" stroke-linecap="round"/>',
+  play:'<path d="M20 12l30 20-30 20Z" fill="#FFCE5C" stroke="#3B2B3A" stroke-width="6" stroke-linejoin="round"/>',
+  replay:'<path d="M54 32a22 22 0 1 1-8-17" fill="none" stroke="#3B2B3A" stroke-width="8" stroke-linecap="round"/><path d="M48 4v16H32" fill="none" stroke="#FF7A6B" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>',
+  spk :'<path d="M14 26h10l14-12v36L24 38H14Z" fill="#6FB8E8" stroke="#3B2B3A" stroke-width="6" stroke-linejoin="round"/><path d="M46 22q7 10 0 20M54 16q11 16 0 32" fill="none" stroke="#3B2B3A" stroke-width="5" stroke-linecap="round"/>',
+  heart:'<path d="M32 56C10 40 4 28 12 19C19 11 28 15 32 23C36 15 45 11 52 19C60 28 54 40 32 56Z" fill="#FF6B7A" stroke="#3B2B3A" stroke-width="6" stroke-linejoin="round"/>',
+  heartOff:'<path d="M32 56C10 40 4 28 12 19C19 11 28 15 32 23C36 15 45 11 52 19C60 28 54 40 32 56Z" fill="#DCCBB4" stroke="#A9906A" stroke-width="6" stroke-linejoin="round"/>',
+  ink:'<path d="M32 6C44 22 52 34 52 42A20 20 0 1 1 12 42C12 34 20 22 32 6Z" fill="#5B4A7A" stroke="#3B2B3A" stroke-width="6" stroke-linejoin="round"/><path d="M24 30q-6 10-4 18" stroke="#FBF3E4" stroke-width="5" stroke-linecap="round" fill="none" opacity=".8"/>',
+  score:'<path d="M32 6l8 17 19 2-14 13 4 19-17-10-17 10 4-19L5 25l19-2Z" fill="#FFCE5C" stroke="#3B2B3A" stroke-width="6" stroke-linejoin="round"/>'
+};
+const icoSVG=n=>{const s=E("svg",{viewBox:"0 0 64 64",xmlns:NS});s.innerHTML=ICON[n]||"";return s;};
+const ibtn=(n,fn,cls)=>{const b=H("button",{class:"ib "+(cls||""),"aria-label":n,on:{click:()=>{Snd.tap();fn();}}});
+  b.appendChild(icoSVG(n));return b;};
+const starSVG=on=>{const s=E("svg",{viewBox:"-40 -40 80 80",xmlns:NS});
+  let d="";for(let i=0;i<10;i++){const a=-Math.PI/2+i*Math.PI/5,r=i%2?11:27;
+    d+=(i?"L":"M")+(Math.cos(a)*r).toFixed(1)+" "+(Math.sin(a)*r).toFixed(1);}
+  d+="Z";
+  if(on){
+    s.appendChild(E("circle",{cx:0,cy:0,r:36,fill:"#FFCE5C",opacity:.30}));
+    s.appendChild(E("path",{d,fill:"#FF8A2B",stroke:INK,"stroke-width":7,"stroke-linejoin":"round",
+      transform:"scale(1.14)"}));
+    s.appendChild(E("path",{d,fill:"#FFE47A",stroke:"none",transform:"scale(0.88)"}));
+    s.appendChild(E("path",{d:"M-10 -14L-1 -8L-11 -2Z",fill:"#FFFFFF",opacity:.92}));
+  }else{
+    s.appendChild(E("circle",{cx:0,cy:0,r:33,fill:"#241A24",opacity:.34}));
+    s.appendChild(E("path",{d,fill:"#241A24",opacity:.60,stroke:INK,"stroke-width":6,
+      "stroke-linejoin":"round",transform:"scale(0.82)"}));
+    s.appendChild(E("path",{d,fill:"none",stroke:"#FBF3E4","stroke-width":3.2,"stroke-linejoin":"round",
+      "stroke-dasharray":"7 6",opacity:.78,transform:"scale(0.82)"}));
+  }
+  return s;};
+function shoutNode(text,color,keepCase){
+  return H("div",{class:"shout",text:keepCase?String(text):String(text).toUpperCase(),
+    style:`--sc:${color||"#FFD45C"}`});
+}
+function reticleFX(fxSVG,x,y){
+  const g=E("g",{class:"reticle"});
+  g.appendChild(E("circle",{cx:x,cy:y,r:26,fill:"none",stroke:"#FF7A6B","stroke-width":5}));
+  g.appendChild(E("circle",{cx:x,cy:y,r:12,fill:"none",stroke:"#FBF3E4","stroke-width":4,opacity:.9}));
+  [[0,-1],[0,1],[-1,0],[1,0]].forEach(([dx,dy])=>g.appendChild(E("path",
+    {d:`M${x+dx*32} ${y+dy*32}L${x+dx*20} ${y+dy*20}`,stroke:"#FF7A6B","stroke-width":5,"stroke-linecap":"round"})));
+  g.appendChild(E("circle",{cx:x,cy:y,r:3.5,fill:"#3B2B3A"}));
+  fxSVG.appendChild(g);
+  setTimeout(()=>{if(g.parentNode)g.remove();},380);
+}
+const sparkle=(x,y,s,c)=>E("path",{d:`M${x} ${y-s}Q${x+s*.2} ${y-s*.2} ${x+s} ${y}Q${x+s*.2} ${y+s*.2} ${x} ${y+s}Q${x-s*.2} ${y+s*.2} ${x-s} ${y}Q${x-s*.2} ${y-s*.2} ${x} ${y-s}Z`,
+  fill:c||CSSV("--butter"),stroke:INK,"stroke-width":3.5,"stroke-linejoin":"round"});
+function winFX(sky,cx,cy,big){
+  const flash=H("div",{class:"winflash"}); sky.appendChild(flash);
+  setTimeout(()=>flash.remove(),320);
+  const COLS=["#FF7A6B","#FFCE5C","#6FD9C0","#6FB8E8","#B49AE0","#F79FC4"];
+  const n=big?26:12;
+  for(let i=0;i<n;i++){
+    const c=H("div",{class:"confetti"});
+    c.style.background=pick(COLS); c.style.left=cx+"px"; c.style.top=cy+"px";
+    c.style.setProperty("--cx",rnd(-140,140).toFixed(0)+"px");
+    c.style.setProperty("--cy",rnd(120,300).toFixed(0)+"px");
+    c.style.setProperty("--cr",rnd(-540,540).toFixed(0)+"deg");
+    c.style.animationDelay=(i%5*0.05)+"s";
+    sky.appendChild(c); setTimeout(()=>c.remove(),1500);
+  }
+  const sb=E("svg",{class:"starburst",xmlns:NS,viewBox:"-100 -100 200 200"});
+  for(let i=0;i<8;i++){const a=i*Math.PI/4;
+    const st=E("g",{class:"sbfly",style:`--sx:${(Math.cos(a)*88).toFixed(0)}px;--sy:${(Math.sin(a)*88).toFixed(0)}px`});
+    st.appendChild(sparkle(0,0,big?13:10,i%2?"#FFE9A8":"#FFCE5C"));
+    sb.appendChild(st);}
+  sb.style.left=cx+"px"; sb.style.top=cy+"px";
+  sky.appendChild(sb); setTimeout(()=>sb.remove(),700);
+}
+
+/* ====================== 아이템(공용 코드 + MG3 신설 100발 탄창) ====================== */
+/* v0.6 ③ — 물통 그림 한 벌. 탄창 버튼과 아이템 아이콘이 같은 이미지를 쓴다(사용자 지시). */
+const MAG3_ART=
+ '<ellipse cx="46" cy="13" rx="10" ry="5.5" fill="#E4B678" stroke="#3B2B3A" stroke-width="5"/>'+
+ '<path d="M39 30V20Q39 14 46 14Q53 14 53 20V30Z" fill="#D9A05B" stroke="#3B2B3A" stroke-width="5" stroke-linejoin="round"/>'+
+ '<path d="M24 30H68V36L74 96Q75 104 67 104H29Q21 104 22 96L28 36Z" fill="#E8635A" stroke="#3B2B3A" stroke-width="6" stroke-linejoin="round"/>'+
+ '<path d="M24 30H68V36H28Z" fill="#C74A3E"/>'+
+ '<path d="M32 46Q30 70 34 96" fill="none" stroke="#F7B0A9" stroke-width="6" stroke-linecap="round" opacity=".9"/>'+
+ '<rect x="18" y="100" width="60" height="11" rx="5" fill="#8F3B33" stroke="#3B2B3A" stroke-width="4"/>';
+const MAG3_ART_EMPTY=
+ '<path d="M24 30H68V36L74 96Q75 104 67 104H29Q21 104 22 96L28 36Z" fill="#EDF3F7" stroke="#3B2B3A" stroke-width="6" stroke-linejoin="round"/>'+
+ '<path d="M24 30H68V36H28Z" fill="#C9D6E0"/>'+
+ '<rect x="18" y="100" width="60" height="11" rx="5" fill="#2C5273" stroke="#3B2B3A" stroke-width="4"/>'+
+ '<path d="M30 48L62 86M62 48L30 86" stroke="#E4374B" stroke-width="9" stroke-linecap="round"/>';
+const ITEM_ICON={
+  mag:'<g transform="translate(6,1) scale(.56)">'+MAG3_ART+'</g>',
+  heart:'<path d="M32 56C10 40 4 28 12 19C19 11 28 15 32 23C36 15 45 11 52 19C60 28 54 40 32 56Z" fill="#FF6B7A" stroke="#3B2B3A" stroke-width="6" stroke-linejoin="round"/><path d="M22 26q-3 5-1 10" stroke="#FBF3E4" stroke-width="4" stroke-linecap="round" fill="none" opacity=".85"/>',
+  ink:'<path d="M32 6C44 22 52 34 52 42A20 20 0 1 1 12 42C12 34 20 22 32 6Z" fill="#5B4A7A" stroke="#3B2B3A" stroke-width="6" stroke-linejoin="round"/><path d="M24 30q-6 10-4 18" stroke="#FBF3E4" stroke-width="5" stroke-linecap="round" fill="none" opacity=".8"/>',
+  score:'<path d="M32 6l8 17 19 2-14 13 4 19-17-10-17 10 4-19L5 25l19-2Z" fill="#FFCE5C" stroke="#3B2B3A" stroke-width="6" stroke-linejoin="round"/><path d="M26 20l-8 4" stroke="#FFF2C8" stroke-width="5" stroke-linecap="round"/>',
+};
+const ITEM_KINDS=["mag","ink","score"];
+function itemSVG(kind){
+  const s=E("svg",{viewBox:"0 0 64 64",xmlns:NS,style:"width:100%;height:100%;display:block"});
+  s.innerHTML=ITEM_ICON[kind]||""; return s;
+}
+/* 좀비가 쓰러질 때 드롭할 아이템 추첨 — heart는 하트가 안 찼을 때만(12%) */
+function rollDropItem(){
+  if(SAVE.hearts<heartCap()&&Math.random()<.12)return "heart";
+  return pick(ITEM_KINDS);
+}
+function grantItem(kind){
+  if(kind==="mag"){ gainMag(); Cue2.gold(); return {score:0,ink:0}; }
+  if(kind==="heart"){
+    if(SAVE.hearts<heartCap()){ SAVE.hearts+=1; persist(); Cue2.gold(); return {score:0,ink:0}; }
+    Cue2.gold(); return {score:80,ink:0};
+  }
+  if(kind==="ink"){ Cue2.gold(); return {score:0,ink:10}; }
+  Cue2.gold(); return {score:50,ink:0};
+}
+function itemPop(sky,x,y,kind){
+  const p=H("div",{class:"itempop"});
+  p.appendChild(itemSVG(kind));
+  p.style.left=x+"px"; p.style.top=y+"px";
+  sky.appendChild(p); later(()=>p.remove(),1200);
+  Snd.t(680,.09,"square",.12); Snd.t(920,.12,"sine",.10);
+}
+
+
+/* ====================== 승계: 원근 팝건·탄창 버튼(MG2 v0.4) + 100발 분기 ====================== */
+/* ⑤ 천 단위 약자 — 1000부터 K, 100만부터 M, 10억부터 B.
+   10 미만이면 소수 한 자리(3.6K), 그 이상이면 정수(36K)라 최대 5자다. */
+function fmtNum(n){
+  n=Math.max(0,Math.round(Number(n)||0));
+  const U=[[1e9,"B"],[1e6,"M"],[1e3,"K"]];
+  for(const u of U){
+    if(n>=u[0]){ const x=n/u[0]; return (x<10?x.toFixed(1):String(Math.round(x)))+u[1]; }
+  }
+  return String(n);
+}
+/* ③ 일반 시계 + 타이머 — 하트 아랫줄. MG1·MG2·MG4와 같은 부품·같은 API */
+function simpleClock(){
+  const s=E("svg",{viewBox:"0 0 64 64",xmlns:NS,class:"clkface"});
+  s.appendChild(E("rect",{x:26,y:1,width:12,height:7,rx:3,fill:INK}));
+  s.appendChild(E("circle",{cx:32,cy:35,r:24,fill:"#FBF3E4",stroke:INK,"stroke-width":6}));
+  const ring=E("circle",{cx:32,cy:35,r:24,fill:"none",stroke:"#6FD9C0","stroke-width":6,
+    transform:"rotate(-90 32 35)","stroke-dasharray":"151 151","stroke-dashoffset":"0",
+    "stroke-linecap":"round"});
+  s.appendChild(ring);
+  const hand=E("g");
+  hand.appendChild(E("path",{d:"M32 35V17",stroke:INK,"stroke-width":5,"stroke-linecap":"round"}));
+  s.appendChild(hand);
+  s.appendChild(E("circle",{cx:32,cy:35,r:3.2,fill:INK}));
+  return {svg:s,
+    set(p){ const r=Math.max(0,Math.min(1,Number(p)||0));
+      ring.setAttribute("stroke-dashoffset",(151*(1-r)).toFixed(1));
+      ring.setAttribute("stroke",r<=.2?"#FF6B7A":(r<=.45?"#FFCE5C":"#6FD9C0"));
+      hand.setAttribute("transform","rotate("+(360*(1-r)).toFixed(1)+" 32 35)"); },
+    burst(){ s.classList.remove("clkburst"); void s.getBoundingClientRect();
+      s.classList.add("clkburst"); }};
+}
+let WGUN_UID=0;
+function buildGun(sky,onAmmo){
+  const el=H("div",{class:"gun "+(SAVE.set.lefty?"left":"right")});
+  const rot=H("div",{class:"gunrot"});
+  const v=E("svg",{viewBox:"0 0 220 300",xmlns:NS,style:"width:100%;height:auto;display:block;overflow:visible"});
+  /* v0.9 ⑤(사용자 지시) — 왼쪽 대각선. ★회전축 = 총구 개구부 (108,54).
+     축이 총구이므로 각도를 바꿔도 총구의 화면 좌표(비율)가 변하지 않는다 → 조준 무영향. */
+  const g=E("g",{transform:"rotate(-30 108 54)"});
+  /* 손잡이 — 가장 가깝다: 크고 화면 아래로 잘린다 */
+  g.appendChild(E("path",{d:"M52 300Q46 236 76 196L154 196Q178 240 172 300Z",
+    fill:"#3E6E96",stroke:INK,"stroke-width":9,"stroke-linejoin":"round"}));
+  /* v0.6 ③ — 손잡이 그림자·하이라이트·미끄럼줄 제거(총을 더 단순하게, 사용자 지시) */
+  /* ── v0.7 ①(사용자 지시) — **장난감 코르크 총**(물총 폐기, 4게임 동일 문법).
+     몸통·둥근 총열·방아쇠 버튼·오렌지 노즐+**꽂힌 코르크**. 노즐 개구부 (108,54) 불변(회전축). ── */
+  g.appendChild(E("path",{d:"M70 198Q62 162 80 138L140 138Q158 162 152 198Z",
+    fill:"#E8635A",stroke:INK,"stroke-width":9,"stroke-linejoin":"round"}));       /* 몸통 */
+  g.appendChild(E("path",{d:"M84 140Q78 100 92 70L124 70Q136 100 132 140Z",
+    fill:"#F2837B",stroke:INK,"stroke-width":9,"stroke-linejoin":"round"}));       /* 둥근 총열 */
+  g.appendChild(E("circle",{cx:88,cy:166,r:8,fill:"#FFCE5C",stroke:INK,"stroke-width":5}));
+  function setWater(){ /* v0.7 ① — 물 높이 표시 폐지(코르크 총). 호출부 호환용 빈 함수 */ }
+  /* ★ 노즐 — 개구부 (108,54) 그대로. 오렌지 안전팁 + 꽂힌 코르크(.cork = corkpop 연출 그대로) */
+  g.appendChild(E("ellipse",{cx:108,cy:54,rx:19,ry:9,fill:"#FF8A3D",stroke:INK,"stroke-width":8}));
+  g.appendChild(E("ellipse",{cx:108,cy:52,rx:11,ry:5.2,fill:"#7A3308"}));
+  const cork=E("g",{class:"cork"});
+  cork.appendChild(E("path",{d:"M101 52L115 52L113 38Q112 32 108 32Q104 32 103 38Z",
+    fill:"#D9A05B",stroke:INK,"stroke-width":5,"stroke-linejoin":"round"}));
+  cork.appendChild(E("ellipse",{cx:108,cy:31,rx:10,ry:5.5,fill:"#E4B678",stroke:INK,"stroke-width":5}));
+  g.appendChild(cork);
+  v.appendChild(g); rot.appendChild(v); el.appendChild(rot);
+  sky.appendChild(el);
+  el.__setWater=setWater;
+  let puffT=0, reloading=false, shakeT=0, lastAcc=null, hintEl=null;
+  function muzzlePx(){ const r=el.getBoundingClientRect(), sr=sky.getBoundingClientRect();
+    return {x:r.left+r.width*.49-sr.left, y:r.top+r.height*.16-sr.top}; }
+  function hint(t,col){ if(hintEl)hintEl.remove();
+    const m=muzzlePx();
+    hintEl=H("div",{class:"reloadhint"}); hintEl.appendChild(shoutNode(t,col||"#FF8A8A"));
+    hintEl.style.left=m.x+"px"; hintEl.style.top=(m.y-10)+"px";
+    sky.appendChild(hintEl); setTimeout(()=>{if(hintEl){hintEl.remove();hintEl=null;}},900); }
+  function reload(){
+    if(reloading)return;
+    if(SAVE.ammo>=MAG_SIZE){hint("FULL!","#7BE3B6");return;}
+    if(SAVE.mags<=0&&SAVE.ammo<=0)SAVE.mags=1;            /* 완전 고갈 안전망 */
+    if(SAVE.mags<=0){hint("NO MAGS!");Snd.no();return;}
+    reloading=true; el.classList.add("reload");
+    Snd.t(500,.07,"square",.11); setTimeout(()=>Snd.t(760,.09,"triangle",.13),170);
+    setTimeout(()=>{ SAVE.mags-=1; SAVE.ammo=MAG_SIZE; persist();
+      el.classList.remove("reload"); reloading=false;
+      const mb=document.getElementById("magBtn"); if(mb)mb.classList.remove("need");
+      if(onAmmo)onAmmo(); Cue2.snap(); },340);
+  }
+  /* PC: 우클릭 장전 */
+  sky.addEventListener("contextmenu",e=>{e.preventDefault(); reload();});
+  /* 폰: 흔들기 장전(iOS는 권한이 필요해 첫 터치 때 요청 — 실패 시 잔탄계 탭이 보조 수단) */
+  function onMotion(e){
+    const a=e.accelerationIncludingGravity; if(!a||a.x==null)return;
+    if(lastAcc){ const d=Math.abs(a.x-lastAcc.x)+Math.abs(a.y-lastAcc.y)+Math.abs(a.z-lastAcc.z);
+      const now=Date.now();
+      if(d>24&&now-shakeT>1200){ shakeT=now; reload(); } }
+    lastAcc={x:a.x,y:a.y,z:a.z};
+  }
+  /* ⑧ 플립 장전 — 폰을 뒤집었다 되돌리면(beta 급반전) 장전. 흔들기와 함께 동작 */
+  let flipT=0, wasFlipped=false;
+  function onOrient(e){
+    if(e.beta==null)return;
+    const flipped=Math.abs(e.beta)>140||Math.abs(e.gamma||0)>140;
+    const now=Date.now();
+    if(wasFlipped&&!flipped&&now-flipT<2500){ reload(); flipT=0; }
+    if(flipped&&!wasFlipped)flipT=now;
+    wasFlipped=flipped;
+  }
+  try{ if(window.DeviceOrientationEvent&&typeof DeviceOrientationEvent.requestPermission!=="function")
+    window.addEventListener("deviceorientation",onOrient); }catch(e){}
+  try{
+    if(window.DeviceMotionEvent&&typeof DeviceMotionEvent.requestPermission==="function"){
+      const ask=()=>{DeviceMotionEvent.requestPermission().then(st=>{
+        if(st==="granted"){window.addEventListener("devicemotion",onMotion);
+          window.addEventListener("deviceorientation",onOrient);}}).catch(()=>{});
+        document.removeEventListener("touchstart",ask);};
+      document.addEventListener("touchstart",ask,{passive:true});
+    } else if(window.DeviceMotionEvent) window.addEventListener("devicemotion",onMotion);
+  }catch(e){}
+  return {el, reload,
+    tryFire(x,y){
+      if(reloading)return false;
+      if(SAVE.ammo<=0){ Snd.t(340,.06,"square",.09); hint("RELOAD!");
+        say("Reload!");
+        const mb=document.getElementById("magBtn");
+        if(mb){mb.classList.add("need");}
+        return false; }
+      SAVE.ammo-=1; persist();
+      if(onAmmo)onAmmo();
+      const m=muzzlePx();
+      const ang=Math.max(-16,Math.min(16,Math.atan2(x-m.x,Math.max(60,m.y-y))*180/Math.PI*.5));
+      rot.style.transform=`rotate(${ang.toFixed(1)}deg)`;
+      el.classList.remove("fire"); void el.offsetWidth; el.classList.add("fire");
+      const now=Date.now(); if(now-puffT>90){ puffT=now;
+        const p=H("div",{class:"gunpuff"});
+        p.style.left=m.x+"px"; p.style.top=m.y+"px";
+        sky.appendChild(p); setTimeout(()=>p.remove(),450); }
+      /* 물방울이 총구에서 탭 지점까지 실제로 날아간다(로직·속도 동일, 그림만 물방울) */
+      const b=H("div",{class:"bullet"});
+      const bs=E("svg",{viewBox:"-10 -10 20 20",xmlns:NS,style:"width:100%;height:100%;display:block"});
+      /* v0.7 ① — 날아가는 것도 코르크 */
+      bs.appendChild(E("path",{d:"M-4.5 -3H4.5V7Q4.5 10 0 10Q-4.5 10 -4.5 7Z",
+        fill:"#D9A05B",stroke:INK,"stroke-width":3,"stroke-linejoin":"round"}));
+      bs.appendChild(E("ellipse",{cx:0,cy:-4.5,rx:7,ry:4.5,fill:"#E4B678",stroke:INK,"stroke-width":3}));
+      b.appendChild(bs);
+      b.style.left=m.x+"px"; b.style.top=m.y+"px";
+      sky.appendChild(b);
+      requestAnimationFrame(()=>{b.style.transform=
+        `translate(${(x-m.x).toFixed(0)}px,${(y-m.y).toFixed(0)}px) scale(.5)`;});
+      setTimeout(()=>{ b.remove();
+        const hp=H("div",{class:"bulhit"});
+        hp.style.left=x+"px"; hp.style.top=y+"px";
+        sky.appendChild(hp); setTimeout(()=>hp.remove(),260); },115);
+      if(SAVE.ammo===0)hint("RELOAD!");
+      return true;
+    }};
+}
+
+function buildMagBtn(){
+  const b=H("button",{class:"magbtn "+(SAVE.set.lefty?"left":"right"),id:"magBtn","aria-label":"reload"});
+  /* ⑤ 탄창 = **물통**. 물총에 총알 탄창을 붙이면 그림이 따로 논다 */
+  const v=E("svg",{viewBox:"0 0 92 112",xmlns:NS});
+  v.innerHTML=MAG3_ART;           /* v0.6 ③ — 아이템 아이콘과 동일 이미지(사용자 지시) */
+  b.appendChild(v);
+  const row=H("div",{class:"magrow"});
+  row.appendChild(H("b",{text:String(SAVE.ammo),class:"num",id:"ammoN"}));
+  row.appendChild(H("span",{class:"magn",id:"magN",text:"\u00d7"+SAVE.mags}));
+  b.appendChild(row);
+  /* 아래로 쓸고 다시 위로 = 장전. 아이콘으로만 알린다(모국어 0) */
+  /* ⑤ 손가락이 아래로 쓸었다 위로 — 장전 방법을 그림으로만 알린다(모국어 0) */
+  const arrow=H("div",{class:"magarrow"});
+  arrow.appendChild(swipeHandSVG()); b.appendChild(arrow);
+  return b;
+}
+function updAmmoHUD(){
+  const a=document.getElementById("ammoN"), m=document.getElementById("magN");
+  if(a)a.textContent=String(SAVE.ammo);
+  if(m)m.textContent="\u00d7"+SAVE.mags;
+  const box=document.getElementById("ammoBox");
+  if(box)box.classList.toggle("low",SAVE.ammo<=3);
+  /* v0.7 ③ — 탄약 0이면 화면 중앙 안내를 켠다(4게임 동일 판단 지점) */
+  const cue=document.getElementById("reloadCue");
+  if(cue)cue.classList.toggle("on",SAVE.ammo<=0);
+}
+/* ⑤ 보상: 단어 학습 완성 → 탄창 +1(2-A) */
+function gainMag(){ SAVE.mags=Math.min(30,SAVE.mags+1); persist(); updAmmoHUD();
+  const box=document.getElementById("ammoBox");
+  if(box){box.classList.remove("pop"); void box.offsetWidth; box.classList.add("pop");} }
+
+
+
+/* ====================== 자동 일시정지(공용 승계) ====================== */
+let PAUSED=false, pauseOv=null;
+function setPaused(on){
+  if(on===PAUSED)return; PAUSED=on;
+  document.body.classList.toggle("paused",on);
+  if(on){ if(SCREEN==="play"&&!pauseOv){
+      pauseOv=H("div",{class:"pauseov"},[shoutNode("PAUSE","#FFD45C")]);
+      document.body.appendChild(pauseOv); }
+    try{if(window.speechSynthesis)speechSynthesis.cancel();}catch(e){}
+  } else { if(pauseOv){pauseOv.remove(); pauseOv=null;} }
+}
+window.addEventListener("blur",()=>setPaused(true));
+window.addEventListener("focus",()=>setPaused(false));
+document.addEventListener("visibilitychange",()=>setPaused(document.hidden));
+
+let SCREEN=null, RAF=0, TIMERS=[];
+const app=document.getElementById("app");
+function clearAll(){ if(RAF)cancelAnimationFrame(RAF); RAF=0;
+  TIMERS.forEach(clearTimeout); TIMERS=[]; app.innerHTML=""; }
+const later=(f,ms)=>{const id=setTimeout(f,ms); TIMERS.push(id); return id;};
+const wait=ms=>new Promise(r=>later(r,ms));
+
+/* ====================== 보호자 패널(유일한 한국어 — 공용 승계) ====================== */
+const axisPct=v=>Math.min(1,v/40);
+function parentPanel(){
+  const back=H("div",{class:"modal"});
+  const box=H("div",{class:"mbox"});
+  box.appendChild(H("h3",{text:"보호자 설정"}));
+  const statRow=(label,key)=>{
+    const r=H("div",{class:"prow"},[H("span",{text:label})]);
+    const bar=H("div",{class:"pbar"},[H("i",{style:"width:"+(axisPct(SAVE.stat[key])*100).toFixed(0)+"%"})]);
+    r.appendChild(bar); box.appendChild(r);};
+  box.appendChild(H("div",{class:"psub",text:"우리 아이 능력치"}));
+  statRow("철자","spell"); statRow("읽기","read"); statRow("뜻","mean");
+  statRow("기억","mem"); statRow("순발력","ref"); statRow("듣기","listen");
+  const seg=(label,key,opts)=>{
+    const r=H("div",{class:"prow"},[H("span",{text:label})]);
+    const g=H("div",{class:"pseg"});
+    opts.forEach((o,i)=>{const b=H("button",{text:o,class:SAVE.set[key]===i?"on":"",
+      on:{click:()=>{SAVE.set[key]=i;persist();applySet();
+        [...g.children].forEach((c,j)=>c.classList.toggle("on",j===i));}}}); g.appendChild(b);});
+    r.appendChild(g); box.appendChild(r);};
+  box.appendChild(H("div",{class:"psub",text:"설정"}));
+  seg("소리","sfx",["끔","켬"]); seg("영어 발음","voice",["끔","켬"]);
+  seg("움직임","motion",["줄이기","보통"]); seg("총 위치","lefty",["오른손","왼손"]);
+  box.appendChild(H("p",{class:"pnote",
+    html:"아이 화면에는 한국어가 나오지 않습니다. 그림·소리·몸짓으로만 뜻을 전합니다.<br>"+
+      "진행 상황은 이 기기에만 저장되며 개인정보를 수집하지 않습니다."+
+      (storageOK?"":"<br><b style='color:#C0392B'>이 브라우저는 저장이 막혀 있습니다.</b>")}));
+  /* ② 홈은 여기에 있다 — 게임 화면에 두면 조준하다 잘못 눌러 판이 통째로 날아간다(사용자 지시).
+     보호자만 닿는 자리로 옮기면 오폭이 구조적으로 불가능해진다. */
+  const row=H("div",{class:"prow2"});
+  row.appendChild(H("button",{class:"pbtn",text:"게임 목록으로",on:{click:()=>{
+    SAVE.hearts=heartCap(); SAVE.ammo=MAG_SIZE; SAVE.mags=9; persist();
+    location.href="index.html";}}}));
+  row.appendChild(H("button",{class:"pbtn",text:"닫기",on:{click:()=>back.remove()}}));
+  box.appendChild(row);
+  back.appendChild(box); document.body.appendChild(back);
+  back.addEventListener("click",e=>{if(e.target===back)back.remove();});
+}
+
+/* ====================== 단어·대사 ====================== */
+const WORDS=[
+ {k:"face", w:"face"},
+ {k:"eye",  w:"eyes",  base:"eye"},
+ {k:"nose", w:"nose"},
+ {k:"mouth",w:"mouth"},
+ {k:"ear",  w:"ears",  base:"ear"},
+ {k:"hair", w:"hair"},
+ {k:"smile",w:"smile"}];
+
+/* ======================================================================
+   좀비 스프라이트 (v0.1 재작화 — "좀비답게" 사용자 지시)
+   · 걸음: 절뚝이는 흐느적 — 몸통이 불규칙하게 기울고, 한 다리는 끌린다
+   · 얼굴: 움푹 팬 눈두덩 + 짝짝이 눈(한쪽은 튀어나오고 한쪽은 처짐) + 벌린 입 + 침
+   · 팔: 앞팔은 앞으로 쭉(발톱 손), 뒷팔은 부러져 덜렁 + 붕대
+   · 톤은 Plants vs Zombies 계열(무섭지 않고 웃긴 쪽) — 5세 대상
+   · 색은 랜덤(글자 고정색 금지 규칙). 좀비다움은 색이 아니라 형태·자세·움직임으로 낸다
+   · 실루엣에서는 .face를 통째로 숨겨 글자꼴이 가려지지 않게 한다
+   ====================================================================== */
+/* 글자 윗변 위치 — 어센더는 y8, x-높이는 y48, i·j·t·f는 예외값 */
+const TOPY={i:20,j:26,t:20,f:10};
+const glyphTop=(ch,meta)=>(TOPY[ch]!=null?TOPY[ch]:(meta.asc?8:48));
+/* v4차 ②③ — 진행 트랙 렌더러(4게임 동일). log=[{ok:…}] · total=스테이지 단어 수 */
+const WMK_OK='<path d="M4 12l5.5 5.5L20 6" fill="none" stroke="#24463A" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>';
+const WMK_NO='<path d="M5.5 5.5l13 13M18.5 5.5l-13 13" fill="none" stroke="#FBF3E4" stroke-width="4" stroke-linecap="round"/>';
+function renderTrack(el,log,total){
+  if(!el)return;
+  el.innerHTML="";
+  for(let i=0;i<total;i++){
+    const r=log[i];
+    const m=H("div",{class:"wmk"+(r?(r.ok?" ok":" no"):"")+(i===log.length?" cur":"")+
+      (r&&i===log.length-1?" pop":"")});
+    if(r){const sv=E("svg",{viewBox:"0 0 24 24",xmlns:NS}); sv.innerHTML=r.ok?WMK_OK:WMK_NO; m.appendChild(sv);}
+    el.appendChild(m);
+  }
+}
+
+/* v0.8 ① — 타이틀 화면 부품(MG1과 같은 정보 구성: 하트 · 잉크 · 씨앗) */
+function heartsRow(){ return H("div",{class:"cnt"},[icoSVG(SAVE.hearts>0?"heart":"heartOff"),
+  H("b",{class:"num",text:"\u00d7"+SAVE.hearts})]); }
+function counter(kind,n){ return H("div",{class:"cnt"},[icoSVG(kind),H("b",{class:"num",text:fmtNum(n)})]); }
+/* v0.8 ① — 별자리 미리보기(MG1 이식). 탭 라벨·반짝임은 뺀 경량판 — 타이틀에서는 모양만 읽히면 된다 */
+const AXES=[
+ {k:"spell", ic:"s_spell"},{k:"read", ic:"s_read"},{k:"mean", ic:"s_mean"},
+ {k:"mem", ic:"s_mem"},{k:"ref", ic:"s_ref"},{k:"listen", ic:"s_listen"}];
+const RAD_FULL=70;
+const radPct=v=>Math.min(1,Math.max(0,v/RAD_FULL));
+function radarSVG(stat){
+  const R=104, CX=150, CY=142;
+  const svg=E("svg",{viewBox:"0 0 300 290",xmlns:NS,style:"width:100%;height:auto;display:block;overflow:visible"});
+  const g=E("g");
+  g.appendChild(E("circle",{cx:CX,cy:CY,r:R+34,fill:"#2E2846"}));
+  for(let i=0;i<26;i++){const a=i*2.4, rr=30+((i*37)%(R+26));
+    g.appendChild(E("circle",{cx:CX+Math.cos(a)*rr,cy:CY+Math.sin(a)*rr,r:1.2+((i*7)%3)*.6,
+      fill:"#FBF3E4",opacity:.45}));}
+  [.34,.67,1].forEach(f=>{
+    let d="";
+    AXES.forEach((_,i)=>{const a=-Math.PI/2+i*Math.PI/3;
+      d+=(i?"L":"M")+(CX+Math.cos(a)*R*f).toFixed(1)+" "+(CY+Math.sin(a)*R*f).toFixed(1);});
+    g.appendChild(E("path",{d:d+"Z",fill:"none",stroke:"#8E86B8","stroke-width":2,opacity:.5}));});
+  AXES.forEach((_,i)=>{const a=-Math.PI/2+i*Math.PI/3;
+    g.appendChild(E("path",{d:"M"+CX+" "+CY+"L"+(CX+Math.cos(a)*R)+" "+(CY+Math.sin(a)*R),
+      stroke:"#8E86B8","stroke-width":2,opacity:.42}));});
+  const pt=[];
+  AXES.forEach((ax,i)=>{const a=-Math.PI/2+i*Math.PI/3;
+    const f=Math.max(.13,radPct((stat&&stat[ax.k])||0));
+    pt.push([CX+Math.cos(a)*R*f, CY+Math.sin(a)*R*f]);});
+  let dd=""; pt.forEach((p,i)=>{dd+=(i?"L":"M")+p[0].toFixed(1)+" "+p[1].toFixed(1);});
+  /* 좀비 테마 — 별자리를 독초록으로 채운다(MG1은 버터색) */
+  g.appendChild(E("path",{d:dd+"Z",fill:"#8BE36B","fill-opacity":.30,stroke:"#B6F29B",
+    "stroke-width":4,"stroke-linejoin":"round"}));
+  pt.forEach(p=>g.appendChild(E("circle",{cx:p[0].toFixed(1),cy:p[1].toFixed(1),r:5,
+    fill:"#B6F29B",stroke:INK,"stroke-width":3})));
+  AXES.forEach((ax,i)=>{const a=-Math.PI/2+i*Math.PI/3;
+    const x=CX+Math.cos(a)*(R+30), y=CY+Math.sin(a)*(R+30);
+    const box=E("g",{transform:"translate("+(x-17).toFixed(1)+","+(y-17).toFixed(1)+")"});
+    box.appendChild(E("circle",{cx:17,cy:17,r:19,fill:"#FBF3E4",stroke:INK,"stroke-width":4}));
+    const ic=E("svg",{viewBox:"0 0 64 64",x:4,y:4,width:26,height:26});
+    ic.innerHTML=ICON[ax.ic]||""; box.appendChild(ic);
+    g.appendChild(box);});
+  svg.appendChild(g); return svg;
+}
+
+
+/* ====================== ③⑨ 생존자 — 도망다니고, 물리고, 아이템을 던져준다 ====================== */
+/* 만화식 몸싸움 먼지구름 — 물리는 장면을 유혈 없이 표현한다(5세 기준) */
+/* ⑨ 이 게임의 폭탄 — 맞히면 좀비 전원이 화면 끝으로 날아간다(이롭다) */
+
+/* ⑤ 장전 안내 — 손가락으로 아래로 쓸었다 위로 */
+/* ① 닫힌 유리문에 물건이 부딪힌 자국 — 방사형 금 + 튐 */
+function swipeHandSVG(){
+  const s=E("svg",{viewBox:"0 0 78 96",xmlns:NS});
+  const g=E("g");
+  g.appendChild(E("path",{d:"M14 34V16M14 12l-7 9h14ZM14 62v18M14 84l7-9H7Z",
+    fill:"#FFCE5C",stroke:INK,"stroke-width":5,"stroke-linejoin":"round","stroke-linecap":"round"}));
+  const f=E("g",{class:"fing"});
+  f.appendChild(E("path",{d:"M46 22v30",stroke:INK,"stroke-width":17,"stroke-linecap":"round"}));
+  f.appendChild(E("path",{d:"M46 22v30",stroke:"#F0C79A","stroke-width":10,"stroke-linecap":"round"}));
+  f.appendChild(E("path",{d:"M36 46q-8 6 -4 18q4 14 18 14q16 0 18 -16l-2 -16q-2 -8 -8 -6q-2 -8 -8 -6q-3 -6 -8 -4Z",
+    fill:"#F0C79A",stroke:INK,"stroke-width":6,"stroke-linejoin":"round"}));
+  g.appendChild(f);
+  s.appendChild(g);
+  return s;
+}
+
+/* 습격 클로즈업 — 화면 한가운데를 얼굴이 꽉 채운다(사용자 지시 ①) */
+
+/* ====================== 신호등 = 언어 0 타이머 + 실패 경고등 ====================== */
+
+/* ====================== 배경 개체 — 허수아비·까마귀(전 개체 입력 반응) ====================== */
+
+/* ====================== 다색 목표 단어(6색 순환) ====================== */
+function multiWordSVG(word,maxW){
+  const g=E("g"); let x=0; const start=Math.floor(Math.random()*LCOLS.length); let i=0;
+  for(const ch of String(word).toLowerCase()){
+    const m=G[ch]; if(!m)continue;
+    const gl=glyph(ch,LCOLS[(start+i)%LCOLS.length]);
+    if(gl){const holder=E("g",{transform:`translate(${x},0)`}); holder.appendChild(gl); g.appendChild(holder);}
+    x+=m.w+8; i++;
+  }
+  const w=Math.max(0,x-8);
+  const s=E("svg",{viewBox:`0 -14 ${w+24} 172`,xmlns:NS,
+    style:`width:${Math.min(maxW||300,w*.8)}px;max-width:100%;height:auto;display:block;margin:0 auto`});
+  s.appendChild(E("g",{transform:"translate(12,0)"},[g]));
+  return s;
+}
+const LCOLS=["#FF7A6B","#FFCE5C","#6FD9C0","#6FB8E8","#B49AE0","#F79FC4"];
+const PRAISE=["Wonderful!","Superb!","Great!","Awesome!","Amazing!","Perfect!","Brilliant!","Fantastic!"];
+const ALPHA="abcdefghijklmnopqrstuvwxyz".split("");
+
+/* ======================================================================
+   Red Light — 본 게임
+   국면: idle → green(유리 닫힘·좀비 전진/재배치) → opening → red(정지·사격 창)
+         → (green | clear | attack)
+   ====================================================================== */
+const ROUNDS=WORDS.length;            /* 스테이지 = 전 단어 출현(공용 표준) */
+/* ── MG5 고유 상수 ──
+   v0.1(사용자 지시 3건): ①카드 세트를 맞추는 시간 **10초**, 틀리면 **-2초**,
+   타이머가 남는 한 **몇 번이고 재시도**(하트는 타이머 0에서만 -1)
+   ②앞면 노출 **2초** ③**단어 3쌍 + 아이템 1쌍**(같은 아이템 2장) */
+const WORD_PAIRS=3;                   /* 단어 쌍 수 — 나머지 1쌍은 아이템 */
+const PEEK_STEP=1000;                 /* 1초 간격으로 다음 카드 */
+const PEEK_OPEN=2000;                 /* ② 한 장이 **2초** 열려 있다(그 뒤 다시 닫힌다) */
+const PEEK_SEC=9;                     /* ① 관찰 구간 = 7초(마지막 카드 시작) + 2초 = 9초 */
+const HUNT_SEC=10;                    /* ③ 세트 맞추는 시간 10초 */
+const MISS_SEC=2;                     /* ④ 틀린 짝 = 시간 -2초(단어는 잃지 않는다) */
+
+
+/* ======================================================================
+   MG5 Flip Match — 고유 아트 (종이컷 SVG · 공용 아트 디렉션 승계)
+   ====================================================================== */
+
+/* 카드 뒷면 = 찐스쿨 브랜드 마크(사용자 확정: 브랜드 마크라 "모국어 0"의 예외).
+   원본 로고를 종이컷 문법으로 재현 — 원형 테두리 + 앰버 호 + 기하 자모 + SCHOOL. */
+const LOGO_NAVY="#1E2A38", LOGO_AMBER="#E8B012";
+function logoBackSVG(){
+  const s=E("svg",{viewBox:"0 0 200 200",xmlns:NS});
+  /* 링 두 조각 — .lring 은 "원 자체"라 안쪽 검사(§로고 검사)에서 제외한다 */
+  s.appendChild(E("circle",{class:"lring",cx:100,cy:100,r:91,fill:"#FFFFFF",
+    stroke:LOGO_NAVY,"stroke-width":7}));
+  /* 링 오른쪽 아래의 앰버 구간 */
+  s.appendChild(E("path",{class:"lring",d:"M182.5 138.4A91 91 0 0 1 156.0 171.6",fill:"none",
+    stroke:LOGO_AMBER,"stroke-width":7,"stroke-linecap":"round"}));
+  /* ★ 자모 묶음 — 원본과 대조해 **위로 8단위 올리고 ㄴ 획을 줄였다**.
+     v0.2까지는 ㄴ 획 아래끝이 148.5라 SCHOOL(윗선 149)과 **맞닿아** 있었고
+     오른끝이 155.5로 링(91)에 바짝 붙었다. 원본은 ㄴ 아래끝 143 · 오른끝 147이다. */
+  const g=E("g",{fill:"none","stroke-width":19,"stroke-linecap":"round","stroke-linejoin":"round"});
+  g.appendChild(E("path",{d:"M50 52H84",stroke:LOGO_AMBER}));
+  g.appendChild(E("path",{d:"M78 52V89Q78 101 66 101Q56 101 53 92",stroke:LOGO_AMBER}));
+  g.appendChild(E("path",{d:"M84 52H120",stroke:LOGO_NAVY}));
+  g.appendChild(E("path",{d:"M112 52V83Q112 95 100 95Q90 95 87 86",stroke:LOGO_NAVY}));
+  g.appendChild(E("path",{d:"M142 52V95",stroke:LOGO_NAVY}));
+  g.appendChild(E("path",{d:"M76 116V133H138",stroke:LOGO_NAVY}));
+  s.appendChild(g);
+  /* ★ SCHOOL — v0.2까지 font-size 31·y 180이라 글자 폭이 **155 단위**(원 지름의 85%)로
+     불어나 링을 25.6 단위 뚫고 나갔다(사용자 제보 "브랜드 로고가 깨지면 안 되잖아").
+     원본 로고에서 SCHOOL은 원 지름의 **약 46%**다.
+     ★ `textLength` + `lengthAdjust`로 폭을 **95 단위에 못 박는다** — 기기마다 대체 글꼴이
+       달라 폭이 흔들리는 문제까지 함께 막힌다(글꼴이 없어도 원 안에 들어온다). */
+  const t=E("text",{x:100,y:167,"text-anchor":"middle","font-size":21,"font-weight":"800",
+    textLength:95,lengthAdjust:"spacingAndGlyphs",fill:LOGO_NAVY,
+    "font-family":"Arial Rounded MT Bold,Baloo 2,Pretendard,system-ui,sans-serif"});
+  t.textContent="SCHOOL";
+  s.appendChild(t);
+  return s;
+}
+
+/* 관찰 구간의 목표칸 — 아직 목표를 밝히지 않는다(밝히면 8장을 볼 이유가 사라진다).
+   ★ 실제 목표와 **같은 부품(.gword > svg)**을 쓴다. 부품이 같아야 2행 높이가 안 흔들린다.
+   그림 = 아직 뒷면인 카드 석 장. */
+function hiddenGoalSVG(){
+  const s=E("svg",{viewBox:"0 0 268 120",xmlns:NS});
+  [0,1,2].forEach(i=>{
+    const g=E("g",{transform:`translate(${8+i*88},8) rotate(${(i-1)*4} 36 52)`});
+    g.appendChild(E("rect",{x:0,y:0,width:72,height:104,rx:12,
+      fill:"#FFFFFF",stroke:INK,"stroke-width":8}));
+    g.appendChild(E("circle",{cx:36,cy:52,r:20,fill:"none",stroke:LOGO_NAVY,"stroke-width":7}));
+    g.appendChild(E("path",{d:"M50.8 63.5A20 20 0 0 1 40 71.5",fill:"none",
+      stroke:LOGO_AMBER,"stroke-width":7,"stroke-linecap":"round"}));
+    s.appendChild(g);
+  });
+  return s;
+}
+
+/* ── 카드를 든 동물 ──
+   ★ 카드가 몸통을 가리므로 알아볼 수 있는 부위(토끼 귀 / 거북이 머리)를 **맨 위**,
+     발을 **맨 아래**에 둔다. 카드는 이 그림보다 **넓고**, 키는 이 그림보다 낮다
+     → 큰 판넬을 앞에 들고 머리만 내민 모양이 된다.
+   viewBox 62×150 (아주 슬림) — 카드 폭보다 좁아야 판넬이 더 커 보인다. */
+function turtleSVG(col){
+  const s=E("svg",{viewBox:"0 0 62 150",xmlns:NS});
+  const g=E("g",{class:"anig","paint-order":"stroke"});
+  const sh=shade(col,.30), ti=tint(col,.36);
+  [8,36].forEach(x=>g.appendChild(E("rect",{x:x,y:112,width:18,height:32,rx:8,
+    fill:sh,stroke:INK,"stroke-width":6})));
+  /* 목 — 위로 길게 */
+  g.appendChild(E("path",{d:"M31 66Q30 48 32 38",fill:"none",stroke:INK,"stroke-width":24,"stroke-linecap":"round"}));
+  g.appendChild(E("path",{d:"M31 66Q30 48 32 38",fill:"none",stroke:ti,"stroke-width":14,"stroke-linecap":"round"}));
+  /* 머리 */
+  g.appendChild(E("ellipse",{cx:31,cy:22,rx:18,ry:15,fill:ti,stroke:INK,"stroke-width":6}));
+  g.appendChild(E("circle",{cx:24,cy:18,r:3.2,fill:INK}));
+  g.appendChild(E("circle",{cx:38,cy:18,r:3.2,fill:INK}));
+  g.appendChild(E("path",{d:"M25 28Q31 33 38 28",fill:"none",stroke:INK,"stroke-width":4,"stroke-linecap":"round"}));
+  /* 등껍질 */
+  g.appendChild(E("path",{d:"M3 120Q3 50 31 50Q59 50 59 120Z",fill:col,stroke:INK,"stroke-width":7,"stroke-linejoin":"round"}));
+  [[18,96],[31,74],[44,96],[31,110]].forEach(([x,y])=>
+    g.appendChild(E("circle",{cx:x,cy:y,r:8,fill:sh,stroke:INK,"stroke-width":4})));
+  g.appendChild(E("path",{d:"M3 120H59",fill:"none",stroke:INK,"stroke-width":7,"stroke-linecap":"round"}));
+  s.appendChild(g);
+  return s;
+}
+function rabbitSVG(col){
+  const s=E("svg",{viewBox:"0 0 62 150",xmlns:NS});
+  const g=E("g",{class:"anig","paint-order":"stroke"});
+  const sh=shade(col,.26), ti=tint(col,.42);
+  [[8,-12],[36,12]].forEach(([x,r])=>
+    g.appendChild(E("rect",{x:x,y:2,width:18,height:50,rx:9,fill:col,stroke:INK,"stroke-width":6,
+      transform:`rotate(${r} ${x+9} 52)`})));
+  g.appendChild(E("path",{d:"M6 142Q3 96 31 96Q59 96 56 142Z",fill:col,stroke:INK,"stroke-width":7,"stroke-linejoin":"round"}));
+  [[15,136],[47,136]].forEach(([x,y])=>g.appendChild(E("ellipse",{cx:x,cy:y,rx:12,ry:8,
+    fill:sh,stroke:INK,"stroke-width":5})));
+  g.appendChild(E("circle",{cx:31,cy:66,r:24,fill:ti,stroke:INK,"stroke-width":7}));
+  g.appendChild(E("circle",{cx:23,cy:62,r:3.5,fill:INK}));
+  g.appendChild(E("circle",{cx:39,cy:62,r:3.5,fill:INK}));
+  g.appendChild(E("path",{d:"M24 74Q31 80 38 74",fill:"none",stroke:INK,"stroke-width":4.5,"stroke-linecap":"round"}));
+  s.appendChild(g);
+  return s;
+}
+
+/* 판넬을 잡은 앞발 — 카드 **위에** 얹어 "들고 있다"를 만든다 */
+function pawsSVG(col){
+  const s=E("svg",{viewBox:"0 0 200 54",xmlns:NS,preserveAspectRatio:"none"});
+  const ti=tint(col,.30);
+  [[18,1],[182,-1]].forEach(([x,d])=>{
+    const g=E("g",{transform:`translate(${x},8) scale(${d},1)`});
+    g.appendChild(E("path",{d:"M-16 36Q-20 6 0 4Q20 6 16 36Z",fill:ti,stroke:INK,"stroke-width":6,"stroke-linejoin":"round"}));
+    [[-8,13],[0,9],[8,13]].forEach(([cx,cy])=>g.appendChild(E("circle",{cx:cx,cy:cy,r:4.2,fill:shade(col,.22)})));
+    s.appendChild(g);
+  });
+  return s;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   v0.2 — 배경 전면 교체: **밤의 축제 경품 사격 부스**
+   ----------------------------------------------------------------------
+   v0.1의 "2층 투시 집"은 베이지 방 8칸 + 평평한 잔디라 그림이 죽어 있었다
+   (사용자 지적 "배경이 다른 미니게임에 비해 너무 재미없어").
+   ★ 축제 사격 부스를 고른 이유:
+     ① **총 메커닉이 이야기로 설명된다** — 원래 총을 쏘는 곳이다
+     ② 경품 선반 2단이 곧 **2행 4열 카드 배치** — 방 8칸보다 훨씬 시원하다
+     ③ 밤 팔레트라 다른 5게임과 겹치지 않는다(전부 낮 장면)
+     ④ 깜빡이는 전구·도는 관람차·펄럭이는 깃발 — 움직일 자리가 많다
+   ★ 측정값(BX·BW·fH·BY·BH)은 그대로 쓴다 — 카드 배치 코드 무변경.
+   ══════════════════════════════════════════════════════════════════════ */
+const BOOTH = {
+  wood:"#B9814E", woodD:"#95643A", woodL:"#D9A469",
+  post:"#E8556E", cream:"#FFF3DE", awn:"#E8556E",
+  wall:"#3E2F63", wallS:"#4E3B78", night:"#241C3C",
+  bulb:"#FFE9A8", bulbOff:"#8F7FA8", tent:"#7B5FA8", boardw:"#6B4A78"
+};
+
+function boothParts(g, BX, BY, BW, BH, fH, W, Hp){
+  const A=(t,at)=>{const el=E(t,at); g.appendChild(el); return el;};
+  const gy=BY+BH;                       /* 부스 바닥선(아래 선반) */
+  const cw=BW/4;
+  const N=(v)=>(+v).toFixed(1);
+
+  /* ── 1) 밤하늘 별 ── */
+  for(let i=0;i<26;i++){
+    const sx=((i*97+31)%100)/100*W, sy=((i*61+13)%100)/100*(BY*0.78), r=1.3+((i*37)%3)*0.9;
+    A("circle",{cx:N(sx),cy:N(sy),r:N(r),fill:"#FFF6D8",
+      opacity:(0.4+((i*29)%5)*0.12).toFixed(2)});
+  }
+  /* ── 2) 관람차 — 오른쪽 뒤에서 천천히 돈다 ── */
+  const fwr=Math.min(BY*.30,W*.20), fwx=W*.80, fwy=BY*.44;
+  A("path",{d:`M${N(fwx-fwr*.5)} ${N(BY*.96)}L${N(fwx)} ${N(fwy)}L${N(fwx+fwr*.5)} ${N(BY*.96)}`,
+    fill:"none",stroke:BOOTH.tent,"stroke-width":5,"stroke-linecap":"round",opacity:.9});
+  const wheel=E("g",{class:"fw6",style:`transform-origin:${N(fwx)}px ${N(fwy)}px`});
+  wheel.appendChild(E("circle",{cx:N(fwx),cy:N(fwy),r:N(fwr),fill:"none",stroke:BOOTH.tent,"stroke-width":5,opacity:.95}));
+  wheel.appendChild(E("circle",{cx:N(fwx),cy:N(fwy),r:N(fwr*.5),fill:"none",stroke:BOOTH.tent,"stroke-width":3.5,opacity:.7}));
+  for(let i=0;i<8;i++){ const a2=i*Math.PI/4;
+    const ex=fwx+Math.cos(a2)*fwr, ey=fwy+Math.sin(a2)*fwr;
+    wheel.appendChild(E("path",{d:`M${N(fwx)} ${N(fwy)}L${N(ex)} ${N(ey)}`,
+      stroke:BOOTH.tent,"stroke-width":3.5,opacity:.8}));
+    wheel.appendChild(E("circle",{cx:N(ex),cy:N(ey),r:5,
+      fill:i%2?"#FFB3C0":BOOTH.bulb,stroke:BOOTH.night,"stroke-width":2.5,opacity:.98}));
+  }
+  g.appendChild(wheel);
+  /* ── 3) 텐트 지붕 — 왼쪽 뒤 ── */
+  (BY<Hp*.24 ? [[.11,.8]] : [[.11,1],[.28,.72]]).forEach(([fx,sc])=>{
+    const tx=W*fx, tw=W*.115*sc, th=BY*.30*sc, base=BY*.96;
+    A("path",{d:`M${N(tx-tw)} ${N(base)}L${N(tx)} ${N(base-th)}L${N(tx+tw)} ${N(base)}Z`,
+      fill:BOOTH.tent,stroke:BOOTH.night,"stroke-width":3.5,opacity:.92});
+    for(let k=-1;k<=1;k+=2)A("path",{d:`M${N(tx)} ${N(base-th)}L${N(tx+tw*k*.5)} ${N(base)}`,
+      stroke:"#9C7ECC","stroke-width":3,opacity:.85});
+    A("path",{d:`M${N(tx)} ${N(base-th)}v${N(-BY*.05)}`,stroke:BOOTH.tent,"stroke-width":3,"stroke-linecap":"round"});
+    A("circle",{cx:N(tx),cy:N(base-th-BY*.062),r:3.5,fill:BOOTH.bulb,class:"blb","data-i":2});
+  });
+
+  /* ── 4) 전구 줄 — 하늘을 가로질러 늘어져 깜빡인다 ── */
+  const ly=BY*.16, sag=BY*.20;
+  A("path",{d:`M-6 ${N(ly)}Q${N(W*.5)} ${N(ly+sag)} ${N(W+6)} ${N(ly)}`,
+    fill:"none",stroke:"#6A5788","stroke-width":3.5});
+  for(let i=0;i<=7;i++){
+    const t=i/7, bx=W*t;
+    const by=ly*(1-t)*(1-t)+(ly+sag)*2*t*(1-t)+ly*t*t;
+    A("path",{d:`M${N(bx)} ${N(by)}v${N(BY*.028)}`,stroke:"#6A5788","stroke-width":3});
+    A("circle",{cx:N(bx),cy:N(by+BY*.052),r:5.5,class:"blb","data-i":i%4,
+      fill:[BOOTH.bulb,"#FFB3C0","#9FE8D4","#FFC97A"][i%4],stroke:INK,"stroke-width":2.5});
+  }
+
+  /* ── 5) 축제 바닥 — 널판 보도 ── */
+  const bwY=gy+Math.max(10,(Hp-gy)*.34);
+  A("rect",{x:-4,y:N(bwY),width:W+8,height:N(Hp-bwY+10),fill:BOOTH.boardw});
+  A("rect",{x:-4,y:N(bwY),width:W+8,height:7,fill:"#8A6294"});
+  for(let i=0;i<=8;i++)A("path",{d:`M${N(W*i/8)} ${N(bwY+6)}V${Hp+8}`,
+    stroke:"#573C63","stroke-width":3,opacity:.7});
+
+  /* ── 6) 부스 뒷판 — 사탕 줄무늬(방 8칸보다 시원하다) ── */
+  A("rect",{x:N(BX),y:N(BY),width:N(BW),height:N(BH),rx:8,fill:BOOTH.wall,stroke:INK,"stroke-width":7});
+  const sw=BW/9;
+  for(let i=1;i<9;i+=2)A("rect",{x:N(BX+sw*i),y:N(BY+4),width:N(sw),height:N(BH-8),fill:BOOTH.wallS});
+  A("rect",{x:N(BX+4),y:N(BY+4),width:N(BW-8),height:N(BH*.05),fill:"#2A2049",opacity:.55});
+
+  /* ── 7) 카운터 — 부스 앞판(아래 선반 밑). 부스가 땅에 붙는다 ── */
+  const ch=bwY-gy+6;
+  if(ch>8){
+    A("rect",{x:N(BX-W*.010),y:N(gy),width:N(BW+W*.020),height:N(ch),rx:6,
+      fill:BOOTH.awn,stroke:INK,"stroke-width":6});
+    const nc=6, cwd=(BW+W*.020)/nc;
+    for(let i=0;i<nc;i+=2)A("rect",{x:N(BX-W*.010+cwd*i),y:N(gy+4),width:N(cwd),height:N(ch-8),fill:BOOTH.cream});
+    A("rect",{x:N(BX-W*.022),y:N(gy-4),width:N(BW+W*.044),height:11,rx:5,
+      fill:BOOTH.wood,stroke:INK,"stroke-width":5});
+  }
+
+  /* ── 8) 선반판 2단 — 카드가 이 선 위에 선다(fH 그대로) ── */
+  for(let f=0;f<2;f++){
+    const y=BY+fH*(f+1);
+    A("rect",{x:N(BX-W*.018),y:N(y-7),width:N(BW+W*.036),height:14,rx:5,
+      fill:BOOTH.wood,stroke:INK,"stroke-width":5});
+    A("rect",{x:N(BX-W*.018+3),y:N(y-4.5),width:N(BW+W*.036-6),height:4,rx:2,fill:BOOTH.woodL,opacity:.75});
+    if(f===0)for(let c=1;c<4;c++)A("circle",{cx:N(BX+cw*c),cy:N(y+10),r:4,
+      class:"blb","data-i":c,fill:BOOTH.bulb,stroke:INK,"stroke-width":2.5});
+  }
+
+  /* ── 9) 좌우 기둥 — 사탕 지팡이 줄무늬 ── */
+  [BX-W*.030, BX+BW+W*.002].forEach(px=>{
+    const pw=W*.028;
+    A("rect",{x:N(px),y:N(BY-8),width:N(pw),height:N(BH+ (ch>8?ch:0) +14),rx:6,
+      fill:BOOTH.cream,stroke:INK,"stroke-width":5});
+    const tot=BH+(ch>8?ch:0), n=Math.max(5,Math.round(tot/24));
+    for(let i=0;i<n;i++)A("path",{
+      d:`M${N(px)} ${N(BY+tot*(i+.15)/n)}l${N(pw)} ${N(-tot/n*.55)}`,
+      stroke:BOOTH.post,"stroke-width":6,opacity:.95});
+    A("rect",{x:N(px),y:N(BY-8),width:N(pw),height:N(tot+14),rx:6,
+      fill:"none",stroke:INK,"stroke-width":5});
+  });
+
+  /* ── 10) 차양 — 스캘럽 줄무늬 + 과녁 엠블럼(사격 부스라는 표시, 글자 없이) ── */
+  const ah=Math.max(16,BY*.16), ay=BY-ah-Math.max(6,BY*.05);
+  const ax0=BX-W*.058, ax1=BX+BW+W*.058;
+  A("path",{d:`M${N(ax0)} ${N(ay)}H${N(ax1)}L${N(ax1-W*.014)} ${N(ay+ah)}H${N(ax0+W*.014)}Z`,
+    fill:BOOTH.cream,stroke:INK,"stroke-width":6,"stroke-linejoin":"round"});
+  const nb=8, bwd=(ax1-ax0)/nb;
+  for(let i=0;i<nb;i+=2)A("path",{
+    d:`M${N(ax0+bwd*i)} ${N(ay)}h${N(bwd)}l${N(-W*.014)} ${N(ah)}h${N(-bwd)}Z`,fill:BOOTH.awn});
+  const ix0=ax0+W*.014, ix1=ax1-W*.014;
+  for(let i=0;i<nb;i++){
+    const sx0=ix0+(ix1-ix0)*i/nb, sx1=ix0+(ix1-ix0)*(i+1)/nb;
+    A("path",{d:`M${N(sx0)} ${N(ay+ah)}Q${N((sx0+sx1)/2)} ${N(ay+ah+ah*.55)} ${N(sx1)} ${N(ay+ah)}Z`,
+      fill:i%2?BOOTH.awn:BOOTH.cream,stroke:INK,"stroke-width":4,"stroke-linejoin":"round"});
+  }
+  A("path",{d:`M${N(ax0)} ${N(ay)}H${N(ax1)}`,stroke:INK,"stroke-width":6,"stroke-linecap":"round"});
+}
+
+/* v0.7 ③ — 빈 탄창 그림 + 화면 중앙 장전 안내(4게임 동일 문법) */
+function emptyMagSVG(){const v=E("svg",{viewBox:"0 0 92 112",xmlns:NS}); v.innerHTML=MAG3_ART_EMPTY; return v;}
+function buildReloadCue(sky){
+  const d=H("div",{class:"reloadcue",id:"reloadCue"});
+  const m=H("div",{class:"cuemag"}); m.appendChild(emptyMagSVG()); d.appendChild(m);
+  const h=H("div",{class:"cuehand"}); h.appendChild(swipeHandSVG()); d.appendChild(h);
+  sky.appendChild(d);
+}
+
+function scrPlay(){
+  clearAll(); SCREEN="play"; regen(Date.now());
+  const stageWords=shuf(WORDS.slice()).slice(0,ROUNDS);
+  let score=0;
+  const wordLog=[]; let wordT0=0;
+  function finishStage(){
+    for(let i2=wordLog.length;i2<stageWords.length;i2++){const qq=stageWords[i2]; wordLog.push({k:qq.k,w:qq.w,ok:false});}
+    scrResult(wordLog.filter(x=>x.ok).length/Math.max(1,wordLog.length)>=.6, score, wordLog);
+  }
+
+  /* ---------- HUD = 대시보드 2행 (MG3 v0.9.2 정본 그대로 · 부품·순서·수치 동일) ---------- */
+  const bar=H("div",{class:"bar"});
+  const rowT=H("div",{class:"dashrow top"});
+  const rowB=H("div",{class:"dashrow bot"});
+  const homeBtn=ibtn("home",()=>{location.href="index.html?t="+Date.now();}); homeBtn.id="playHome";
+  rowT.appendChild(homeBtn);
+  const hearts=H("div",{class:"hearts",id:"hearts"}); rowT.appendChild(hearts);
+  rowT.appendChild(H("div",{class:"cnt fixed"},[icoSVG("score"),H("b",{class:"num",id:"scoreN",text:"0"})]));
+  const inkBox=H("div",{class:"cnt fixed",id:"inkBox"},[icoSVG("ink"),H("b",{class:"num",text:fmtNum(SAVE.ink)})]);
+  rowT.appendChild(inkBox);
+  rowT.appendChild(ibtn("gear",parentPanel));
+  const clk=simpleClock();
+  const clockBox=H("div",{class:"clock",id:"clock"}); clockBox.appendChild(clk.svg);
+  const cnum=H("b",{class:"cnum",id:"cnum",text:"--"});
+  const clockWrap=H("div",{class:"clockwrap"},[clockBox,cnum]);
+  rowB.appendChild(H("div",{class:"timecell"},[clockWrap]));
+  bar.appendChild(rowT); bar.appendChild(rowB);
+  app.appendChild(bar);
+  let clkLast=-1;
+  /* 시계는 지금 국면의 남은 시간을 그대로 읽는다(관찰 8초 · 사격 6초) */
+  function updClock(){
+    let p=1, sec=0, on=false;
+    if(R.phase==="peek"){ p=clamp(R.peekLeft/PEEK_SEC,0,1); sec=Math.ceil(Math.max(0,R.peekLeft)); on=true; }
+    else if(R.phase==="hunt"){ p=clamp(R.huntLeft/HUNT_SEC,0,1); sec=Math.ceil(Math.max(0,R.huntLeft)); on=true; }
+    clk.set(p);
+    const t=on?String(sec):"--";
+    if(t!==cnum.textContent){
+      cnum.textContent=t;
+      if(on&&sec<=1&&clkLast>sec)clk.burst();
+      clkLast=sec;
+    }
+  }
+  function updHearts(){ hearts.innerHTML="";
+    hearts.appendChild(icoSVG(SAVE.hearts>0?"heart":"heartOff"));
+    hearts.appendChild(H("b",{class:"hx",text:"×"+SAVE.hearts}));
+    hearts.classList.toggle("zero",SAVE.hearts<=0); }
+  function updScore(){ const n=document.getElementById("scoreN"); if(n)n.textContent=fmtNum(score);
+    inkBox.querySelector(".num").textContent=fmtNum(SAVE.ink); }
+  updHearts();
+
+  /* ---------- 필드 ---------- */
+  const sky=H("div",{class:"sky"});
+  const bg=E("svg",{class:"bgsvg"});
+  const houseG=E("g");
+  bg.appendChild(houseG);
+  sky.appendChild(bg);
+  const worldg=H("div",{class:"worldg"}); sky.appendChild(worldg);
+  const fx=E("svg",{class:"fx"}); sky.appendChild(fx);
+  /* 목표 = 단어 그림 하나(.gword — MG2·MG4와 같은 부품). 철자판 안에 상자를 두지 않는다 */
+  const goal=H("div",{class:"goal"}); rowB.appendChild(goal);
+  const wtrack=H("div",{class:"wtrack",id:"wtrack",style:"--pg-ok:#F5C542"}); rowB.appendChild(wtrack);
+  app.appendChild(sky);
+  const gun=buildGun(sky,updAmmoHUD);
+  const magBtn=buildMagBtn(); sky.appendChild(magBtn);
+  buildReloadCue(sky);
+  magBtn.addEventListener("pointerdown",e=>{e.stopPropagation();
+    const cue=document.getElementById("reloadCue");
+    if(cue){cue.classList.add("on"); setTimeout(updAmmoHUD,1400);} });
+
+  /* ---------- 상태 ---------- */
+  const R={phase:"idle",round:0,word:null,cards:[],sel:[],
+           peekLeft:0,huntLeft:0,fails:0,miss:0,busy:false,gotItem:false};
+  window.__MG5=R;
+
+  /* ---------- 측정 + 축제 경품 부스 ---------- */
+  let W=0,Hp=0,BX=0,BY=0,BW=0,BH=0,fH=0,cw=0,cardW=0,cardH=0,aniH=0,fieldRO=null;
+  function measure(){
+    const r=sky.getBoundingClientRect();
+    if(!r.width||!r.height)return;
+    if(Math.abs(r.width-W)<.5&&Math.abs(r.height-Hp)<.5)return;
+    W=r.width; Hp=r.height;
+    fx.setAttribute("viewBox",`0 0 ${W} ${Hp}`);
+    bg.setAttribute("viewBox",`0 0 ${W} ${Hp}`);
+    /* 카드 크기에서 층 높이를 거꾸로 잡는다 — 방이 카드보다 훨씬 크면 건물이 텅 비어 보인다 */
+    BX=W*.023; BW=W*.954; cw=BW/4;
+    cardW=cw*.93; cardH=cardW*1.50;
+    aniH=cardH*1.60;                    /* 동물이 카드보다 키가 커서 얼굴·귀가 판넬 위로 나온다 */
+    fH=aniH*1.06; BH=fH*2;
+    /* ★ v0.2 — 부스를 **아래로 붙이고 위를 전부 밤하늘로 준다**.
+       v0.1은 BY를 6.8%로 못 박아 하늘이 46px밖에 안 남았고(관람차·전구줄이 화면 밖),
+       대신 부스 아래에 237px짜리 빈 잔디가 깔렸다. 위아래를 맞바꾼다. */
+    /* ★ 아래 여백은 **0.22 밑으로 내리면 안 된다** — 첫 시도에 0.155로 줬더니
+       아래 칸 카드가 총·탄창 위로 내려와 **탭이 총에 먹혔다**(아이템 짝을 못 맞춤).
+       스위트 20번(카드 하단 ≤ 0.78)이 그대로 잡아냈다. */
+    const botPad=Hp*.22;                /* 아래 — 총·탄창 자리(불변) */
+    const skyMin=Hp*.17;                /* 위 — 밤하늘 최소치(관람차·전구줄) */
+    const maxB=Hp-botPad-skyMin;
+    if(BH>maxB){ const k=maxB/BH; BH*=k; fH*=k; aniH*=k; cardH*=k; cardW=cardH/1.50; }
+    BY=Hp-botPad-BH;
+    drawHouse(); layoutCards();
+  }
+  /* ★ v0.2 — 배경을 **밤의 축제 경품 사격 부스**로 교체(사용자 지적 "배경이 재미없어").
+     측정값(BX·BW·fH·BY·BH)은 그대로라 카드 배치 코드는 한 줄도 안 바뀐다.
+     선반판 2단이 곧 카드 2행이고, 카드는 예전처럼 선반 위에 선다. */
+  function drawHouse(){
+    houseG.innerHTML="";
+    boothParts(houseG,BX,BY,BW,BH,fH,W,Hp);
+  }
+
+  /* ---------- 카드 8장 = 단어 3쌍(단어+그림) + **아이템 1쌍**(같은 아이템 2장) ---------- */
+  function buildRound(idx){
+    R.word=stageWords[idx];
+    const others=shuf(WORDS.filter(w=>w.k!==R.word.k)).slice(0,WORD_PAIRS-1);
+    const set=shuf([R.word].concat(others));
+    const items=[];
+    set.forEach(w=>{ items.push({w:w,type:"word"}); items.push({w:w,type:"pic"}); });
+    /* 아이템 쌍 — 두 장이 **같은 아이템**이어야 짝이 성립한다(사용자 확정) */
+    const ik=rollDropItem();
+    items.push({item:ik,type:"item"}); items.push({item:ik,type:"item"});
+    shuf(items);
+    const kinds=shuf(["t","t","t","t","r","r","r","r"]);
+    worldg.innerHTML="";
+    R.cards=items.map((it,i)=>{
+      const f=Math.floor(i/4), c=i%4;
+      /* 동물 — 카드 뒤에 선다(카드가 자기보다 크다) */
+      const pal=H("div",{class:"pal"});
+      const col=kinds[i]==="t"?pick(["#6FD9C0","#7BC47F","#5FBFA8","#8AD07A"])
+                              :pick(["#F2B8C6","#E0C7F0","#F7D9A0","#EFC0B2"]);
+      pal.appendChild(kinds[i]==="t"?turtleSVG(col):rabbitSVG(col));
+      worldg.appendChild(pal);
+      /* 카드 */
+      const el=H("div",{class:"c5"});
+      const inn=H("div",{class:"c5in"});
+      const bk=H("div",{class:"c5f bk"}); bk.appendChild(logoBackSVG());
+      const fr=H("div",{class:"c5f fr"+(it.type==="item"?" item":"")});
+      if(it.type==="word") fr.appendChild(multiWordSVG(it.w.w,300));
+      else if(it.type==="pic") fr.appendChild(partIcon(it.w.k));
+      else fr.appendChild(itemSVG(it.item));
+      inn.appendChild(bk); inn.appendChild(fr);
+      el.appendChild(inn); worldg.appendChild(el);
+      /* 판넬을 잡은 앞발 — 카드 위에 얹어야 "들고 있다"로 읽힌다 */
+      const paw=H("div",{class:"paw"}); paw.appendChild(pawsSVG(col)); worldg.appendChild(paw);
+      return {el,pal,paw,it,f,c,x:0,y:0,w:0,h:0,open:false,locked:false};
+    });
+    layoutCards();
+  }
+  function layoutCards(){
+    if(!R.cards.length||!W)return;
+    R.cards.forEach(cd=>{
+      const bx=BX+cw*(cd.c+.5);
+      const fy=BY+fH*(cd.f+1)-Math.max(6,fH*.045);     /* 그 층의 바닥선 */
+      const aw=aniH*(62/150);
+      cd.pal.style.left=(bx-aw/2).toFixed(1)+"px";
+      cd.pal.style.top=(fy-aniH).toFixed(1)+"px";
+      cd.pal.style.width=aw.toFixed(1)+"px";
+      cd.pal.style.height=aniH.toFixed(1)+"px";
+      /* 카드는 바닥에 닿게 — 동물의 머리·귀가 판넬 위로 올라온다 */
+      const y=fy-cardH, x=bx-cardW/2;
+      cd.x=x; cd.y=y; cd.w=cardW; cd.h=cardH;
+      cd.el.style.left=x.toFixed(1)+"px"; cd.el.style.top=y.toFixed(1)+"px";
+      cd.el.style.width=cardW.toFixed(1)+"px"; cd.el.style.height=cardH.toFixed(1)+"px";
+      const ph=cardW*.30;
+      cd.paw.style.left=x.toFixed(1)+"px";
+      cd.paw.style.top=(y+cardH-ph*.66).toFixed(1)+"px";
+      cd.paw.style.width=cardW.toFixed(1)+"px";
+      cd.paw.style.height=ph.toFixed(1)+"px";
+    });
+  }
+  const openCard=cd=>{cd.open=true; cd.el.classList.add("open");};
+  const shutCard=cd=>{if(cd.locked)return; cd.open=false; cd.el.classList.remove("open");};
+
+  /* ---------- ① READY GO → ② 관찴 ----------
+     ★ v0.2(사용자 지시): READY GO를 **카드를 보여주는 단계 바로 앞**으로 옮겼다.
+       예전엔 관찰 → 예습 → READY GO → 사격이라, 목표를 보여준 직후에 다시 멈춰
+       세우는 꼴이었다. 이제 READY GO가 라운드의 시작을 알리고, 예습 카드가
+       사라지는 순간 곧바로 사격으로 이어진다.
+     ★ 여기서는 **목표 단어를 읽어 주지 않는다** — 관찰 전에 정답을 말하면
+       8장을 다 볼 이유가 사라진다(목표칸을 가려 두는 설계와 같은 이유). */
+  async function roundStart(){
+    R.phase="idle"; R.busy=true;
+    buildGoal(true);                     /* 목표는 가린 채로 — 칸 높이는 그대로 */
+    const ov=H("div",{class:"readyov"}); sky.appendChild(ov);
+    const show=(t,c)=>{ov.innerHTML="";ov.appendChild(shoutNode(t,c||"#FFD45C"));};
+    show("READY"); Cue2.ready(); await wait(620);
+    show("GO!","#7BE3B6"); Cue2.go(); await wait(480);   /* 3·2·1 카운트다운 없음 */
+    ov.remove();
+    if(SCREEN!=="play")return;
+    R.busy=false; peek();
+  }
+  function peek(){
+    R.phase="peek"; R.peekLeft=PEEK_SEC;
+    buildGoal(true);                       /* 목표는 아직 가린 채, 칸 높이는 그대로 */
+    const order=shuf(R.cards.map((c,i)=>i));
+    order.forEach((ci,n)=>{
+      later(()=>{ if(SCREEN!=="play"||R.phase!=="peek")return;
+        const cd=R.cards[ci]; openCard(cd); cd.pal.classList.add("pop"); Cue2.tink();
+        later(()=>{ if(SCREEN==="play")shutCard(cd); cd.pal.classList.remove("pop"); },PEEK_OPEN);
+      },n*PEEK_STEP);
+    });
+    later(()=>{ if(SCREEN!=="play")return;
+      R.cards.forEach(shutCard); R.phase="idle"; prestudy(R.round); },PEEK_SEC*1000+220);
+  }
+
+  /* ---------- ③ 예습 카드 → 곧바로 사격 ---------- */
+  async function prestudy(idx){
+    R.phase="idle"; R.fails=0; R.miss=0; R.sel=[]; R.gotItem=false;
+    buildGoal();
+    const ov=H("div",{class:"modal"});
+    const card=H("div",{class:"card"});
+    const pic=H("div",{class:"prept"}); pic.appendChild(partIcon(R.word.k)); card.appendChild(pic);
+    card.appendChild(multiWordSVG(R.word.w,260));
+    const row=H("div",{style:"display:flex;gap:12px"});
+    row.appendChild(ibtn("spk",()=>{say(R.word.w);Cue2.word();}));
+    let started=false;
+    /* 예습 카드가 사라지는 순간이 곧 출발 신호다 — READY GO는 이미 관찰 앞에서 했다 */
+    const go=()=>{ if(started)return; started=true;
+      Snd.init(); if(ov.parentNode)ov.remove();
+      later(()=>{ if(SCREEN==="play")say(R.word.w); },200);
+      startHunt(); wordT0=performance.now(); };
+    row.appendChild(H("button",{class:"bigbtn",on:{click:go}},[icoSVG("play")]));
+    card.appendChild(row);
+    const abar=H("div",{class:"autobar"},[H("i")]);
+    card.appendChild(abar);
+    ov.appendChild(card); app.appendChild(ov);
+    later(()=>{say(R.word.w);Cue2.word();},300);
+    later(()=>{ if(SCREEN==="play")go(); },3000);
+  }
+  function startHunt(){
+    R.phase="hunt"; R.huntLeft=HUNT_SEC; R.busy=false; R.sel=[];
+    R.cards.forEach(cd=>{cd.locked=false; shutCard(cd);});
+  }
+
+  /* ---------- 목표칸 = 단어 그림(공용 부품 .gword) ----------
+     ★ 관찰 구간에는 목표를 감춘다(밝히면 8장을 볼 이유가 없어진다).
+       감출 때도 **같은 부품**을 써야 2행 높이가 흔들리지 않는다 —
+       라운드 도중에 대시보드 높이가 바뀌면 필드까지 같이 움직인다. */
+  function buildGoal(hidden){
+    goal.innerHTML="";
+    const gw=H("div",{class:"gword"});
+    gw.appendChild(hidden?hiddenGoalSVG():multiWordSVG(R.word.w,300));
+    goal.appendChild(gw);
+    renderTrack(wtrack,wordLog,stageWords.length);
+  }
+
+  /* ---------- 연출 문구 회피 (4게임 공통 문법 — 투명도는 --fxop 변수로) ---------- */
+  const FX_BANDS=[0.10,0.24,0.40,0.56,0.72];
+  function fxSpot(){
+    const sr=sky.getBoundingClientRect();
+    if(!sr.height)return {top:0.15,op:.95};
+    const ys=[];
+    R.cards.forEach(cd=>{ if(!cd.h)return;
+      ys.push({c:(cd.y+cd.h*.5)/sr.height, h:cd.h/sr.height}); });
+    let best=FX_BANDS[0], bg2=-1;
+    FX_BANDS.forEach(b=>{
+      let m=9;
+      ys.forEach(o=>{ m=Math.min(m,Math.abs(b-o.c)-o.h*.5); });
+      if(m>bg2){bg2=m; best=b;}
+    });
+    const op=clamp(.42+(bg2+.02)*3.4,.42,.95);
+    return {top:best,op:op};
+  }
+  function callout(t,col){
+    const sp=fxSpot();
+    const d=H("div",{class:"callout"});
+    d.style.setProperty("--fxop",sp.op.toFixed(2));
+    d.style.top=(sp.top*100).toFixed(1)+"%";
+    d.appendChild(shoutNode(t,col));
+    sky.appendChild(d);
+    requestAnimationFrame(()=>d.classList.add("in"));
+    later(()=>d.remove(),1000);
+  }
+
+  /* ---------- 판정 ---------- 
+     ★ v0.1(사용자 지적 "맞춰도 성공이 안 된다"): v0.0.2는 **단어 카드를 먼저** 쏴야만
+       정답으로 쳤다. 짝이 맞는 두 장이라도 그림을 먼저 쏘면 오답 + 하트 -1 + 단어 상실 —
+       화면에 순서 신호가 하나도 없으니 사용자에겐 그냥 버그였다. 순서 강제를 폐기한다.
+     새 규칙: 두 장을 뒤집으면 판정한다.
+       · 목표 단어의 짝(단어+그림) → 성공
+       · 아이템 짝(같은 아이템 2장) → 아이템 획득 + 잠금, 라운드는 계속(무벌)
+       · 그 외 → **시간 -2초**, 두 장 다시 닫힘, 타이머가 남는 한 몇 번이고 재시도
+       · 하트는 **타이머가 0이 될 때만** -1 */
+  const isTarget=cd=>cd.it.w&&cd.it.w.k===R.word.k;
+  function shootAt(x,y){
+    reticleFX(fx,x,y);
+    if(R.phase!=="hunt"||R.busy){ Cue2.tink(); return; }
+    let hit=null;
+    for(let i=R.cards.length-1;i>=0;i--){
+      const cd=R.cards[i];
+      if(cd.locked||cd.open)continue;
+      if(x>=cd.x&&x<=cd.x+cd.w&&y>=cd.y&&y<=cd.y+cd.h){ hit=cd; break; }
+    }
+    if(!hit){ R.miss++; Cue2.tink(); return; }        /* 헛발 = 탄약만 소모, 벌 없음 */
+    openCard(hit); hit.el.classList.add("hit");
+    later(()=>hit.el.classList.remove("hit"),420);
+    R.sel.push(hit);
+    if(R.sel.length<2){ Cue2.tink(); return; }
+    judge(R.sel[0],R.sel[1]);
+  }
+  function judge(a,bq){
+    R.busy=true;
+    const pair=(a.it.type==="item"&&bq.it.type==="item");
+    const target=(isTarget(a)&&isTarget(bq)&&a.it.type!==bq.it.type);
+    if(target){                                     /* 목표 짝 — 성공 */
+      [a,bq].forEach(cd=>{cd.locked=true; cd.el.classList.add("done");});
+      R.sel=[]; Cue2.word(); wordClear(); return;
+    }
+    if(pair){                                       /* 아이템 짝 — 보너스, 라운드는 계속 */
+      [a,bq].forEach(cd=>{cd.locked=true; cd.el.classList.add("done");});
+      const g=grantItem(a.it.item);
+      if(g.score){ score+=g.score; }
+      if(g.ink){ SAVE.ink+=g.ink; }
+      persist(); updScore();
+      itemPop(sky,(a.x+a.w/2),(a.y+a.h/2),a.it.item);
+      callout("BONUS!","#F5C542");
+      R.gotItem=true; R.sel=[];
+      later(()=>{ if(SCREEN==="play"&&R.phase==="hunt")R.busy=false; },420);
+      return;
+    }
+    /* 그 외 — 시간만 깎고 다시 닫는다. 단어는 잃지 않는다 */
+    R.fails++;
+    [a,bq].forEach(cd=>cd.el.classList.add("bad"));
+    Snd.no();
+    R.huntLeft=Math.max(0,R.huntLeft-MISS_SEC);
+    penaltyFX();
+    later(()=>{
+      [a,bq].forEach(cd=>{cd.el.classList.remove("bad"); shutCard(cd);});
+      R.sel=[];
+      if(SCREEN==="play"&&R.phase==="hunt")R.busy=false;
+    },760);
+  }
+  /* 시간이 깎인 것을 눈으로 알린다 — 시계 옆에 -2초가 튄다 */
+  function penaltyFX(){
+    const cell=document.querySelector(".timecell");
+    if(cell){ cell.classList.remove("pen"); void cell.offsetWidth; cell.classList.add("pen");
+      later(()=>cell.classList.remove("pen"),620); }
+    clk.burst();
+    const sp=fxSpot();
+    const d=H("div",{class:"callout"});
+    d.style.setProperty("--fxop",sp.op.toFixed(2));
+    d.style.top=(sp.top*100).toFixed(1)+"%";
+    d.appendChild(shoutNode("-"+MISS_SEC+"s","#FF8A7A"));
+    sky.appendChild(d);
+    requestAnimationFrame(()=>d.classList.add("in"));
+    later(()=>d.remove(),1000);
+  }
+
+  /* ---------- 라운드 마무리 — ★ 성공이든 실패든 **8장 전부 앞면**을 보여준다
+     (사용자 지시). 못 맞힌 카드가 뭐였는지 아이가 확인하고 넘어간다.
+     목표 짝 두 장에는 초록 테두리를 둘러 "이 둘이 짝이었어"를 가르친다. ---------- */
+  function revealAll(){
+    R.cards.forEach(cd=>{ cd.locked=true; openCard(cd); });
+    R.cards.forEach(cd=>{ if(isTarget(cd)) cd.el.classList.add("ans"); });
+    Cue2.snap();
+  }
+
+  /* ---------- 단어 상실 / 완성 ---------- */
+  function wordClear(){
+    R.phase="clear"; R.busy=true;
+    revealAll();                                 /* ★ 성공해도 8장 전부 공개 */
+    winFX(sky,W/2,Hp*.42,true);
+    Cue2.fanfare(); Cue2.clap();
+    gainMag();
+    SAVE.stat.spell+=1; SAVE.stat.ref+=1;
+    SAVE.seen[R.word.w]=(SAVE.seen[R.word.w]||0)+1;
+    persist();
+    const pf=(R.fails===0&&R.miss===0);          /* 실패 짝 0 + 헛발 0 = 두 장 만에 끝냈다 */
+    wordLog.push({k:R.word.k,w:R.word.w,ok:true,perfect:pf,ms:performance.now()-wordT0});
+    renderTrack(wtrack,wordLog,stageWords.length);
+    if(pf){ score+=80; cascadeFX(sky,W||360,Hp||520); }
+    score+=140; updScore();
+    say(R.word.w);
+    later(()=>{
+      if(SCREEN!=="play")return;
+      R.round+=1;
+      if(R.round>=ROUNDS) finishStage(); else nextRound();
+    },3000);                                     /* 전 카드를 볼 시간만큼 늘렸다 */
+  }
+  function timeUp(){
+    R.phase="idle"; R.busy=true;
+    /* ★ 하트가 깎이는 경우는 **여기 하나뿐**이다(사용자 확정 v0.1) */
+    SAVE.hearts=Math.max(0,SAVE.hearts-1); persist(); updHearts();
+    callout("TIME!","#FF8A7A"); Snd.no();
+    revealAll();                                 /* ★ 실패해도 8장 전부 + 정답 짝 표시 */
+    wordLog.push({k:R.word.k,w:R.word.w,ok:false});
+    renderTrack(wtrack,wordLog,stageWords.length);
+    later(()=>{
+      if(SCREEN!=="play")return;
+      if(SAVE.hearts<=0){ finishStage(); return; }
+      R.round+=1;
+      if(R.round>=ROUNDS) finishStage(); else nextRound();
+    },2600);                                     /* 전 카드를 볼 시간만큼 늘렸다 */
+  }
+  function nextRound(){ buildRound(R.round); roundStart(); }
+
+  /* ---------- 입력: 스와이프 장전(4게임 동일) + 사격 ---------- */
+  let swY0=null,swMax=0,swArmed=false,swT=0,swFx=null;
+  function swFxShow(){ if(swFx)return;
+    swFx=H("div",{class:"swfx"});
+    const sv=E("svg",{viewBox:"0 0 92 112",xmlns:NS}); sv.innerHTML=MAG3_ART; swFx.appendChild(sv);
+    sky.appendChild(swFx); }
+  function swFxMove(dy){ if(!swFx)return;
+    swFx.style.transform="translate(-50%,-50%) translateY("+Math.max(-60,Math.min(96,dy)).toFixed(0)+
+      "px) scale("+(1+Math.min(.4,Math.abs(dy)/220)).toFixed(2)+")"; }
+  function swFxEnd(ok){ if(!swFx)return; const f=swFx; swFx=null;
+    if(ok){ f.classList.add("snap"); setTimeout(()=>f.remove(),260); } else f.remove(); }
+  const swEnd=()=>{ swY0=null; swArmed=false; swFxEnd(false); };
+  sky.addEventListener("pointerdown",e=>{ swY0=e.clientY; swMax=e.clientY; swArmed=false; swT=Date.now(); });
+  sky.addEventListener("pointermove",e=>{
+    if(swY0==null)return;
+    if(e.clientY>swMax)swMax=e.clientY;
+    if(SAVE.ammo<MAG_SIZE&&e.clientY-swY0>18){ swFxShow(); swFxMove(e.clientY-swY0); }
+    if(!swArmed&&e.clientY-swY0>44)swArmed=true;
+    if(swArmed&&swMax-e.clientY>44&&Date.now()-swT<1000){ swY0=null; swFxEnd(true); gun.reload(); }
+  });
+  sky.addEventListener("pointerup",swEnd);
+  sky.addEventListener("pointercancel",swEnd);
+  sky.addEventListener("pointerleave",swEnd);
+  sky.addEventListener("pointerdown",e=>{
+    if(PAUSED)return;
+    if(R.phase!=="hunt")return;
+    const rc=sky.getBoundingClientRect();
+    const x=e.clientX-rc.left, y=e.clientY-rc.top;
+    Snd.init();
+    if(!gun.tryFire(x,y))return;
+    Cue2.shot();
+    shootAt(x,y);
+  });
+
+  /* ---------- 루프 ---------- */
+  let last=performance.now();
+  function frame(now){
+    if(SCREEN!=="play")return;
+    const dt=Math.min(.05,(now-last)/1000); last=now;
+    if(!PAUSED){
+      if(R.phase==="peek"){ R.peekLeft-=dt; }
+      else if(R.phase==="hunt"){
+        R.huntLeft-=dt;
+        if(R.huntLeft<=0&&!R.busy) timeUp();
+      }
+      updClock();
+    }
+    RAF=requestAnimationFrame(frame);
+  }
+
+  try{ fieldRO=new ResizeObserver(()=>measure()); fieldRO.observe(sky); }catch(e){}
+  measure();
+  updAmmoHUD();
+  buildRound(0);
+  measure();
+  roundStart();
+  RAF=requestAnimationFrame(frame);
+}
+
+/* ====================== 타이틀·결과 ====================== */
+function warmTTS(){
+  try{ if(window.speechSynthesis){ speechSynthesis.getVoices();
+    const u=new SpeechSynthesisUtterance(" "); u.volume=0; speechSynthesis.speak(u); } }catch(e){}
+}
+/* v0.8 ①(사용자 지시) — 시작 전 화면을 **Spellshot과 같은 문법**으로 통일.
+   순서: 큰 타이틀 → 주인공 아트 → 자원(하트·잉크·씨앗) → ▶ → 3초 자동 시작 게이지 → 별자리
+   → 좌상단 🏠 / 우상단 ⚙. 색만 좀비 테마(붉은 신호등 + 독초록 좀비). 카드형 레이아웃은 폐기. */
+function scrTitle(){
+  clearAll(); SCREEN="title"; regen(Date.now());
+  const c=H("div",{class:"pageC"});
+  c.appendChild(H("div",{class:"gametitle"},[shoutNode("Flip Match","#F5C542",true)]));
+  /* 주인공 아트 — 토끼가 카드를 들고 선다(뒷면 = 브랜드 마크) */
+  const hold=H("div",{class:"heroart"});
+  const stage5=H("div",{class:"herocard"});
+  const rb=rabbitSVG("#F2B8C6"); rb.classList.add("hero5");
+  const cardArt=H("div",{class:"hcard"}); cardArt.appendChild(logoBackSVG());
+  stage5.appendChild(rb); stage5.appendChild(cardArt);
+  hold.appendChild(stage5);
+  c.appendChild(hold);
+  const bar=H("div",{class:"purse"});
+  bar.appendChild(heartsRow());
+  bar.appendChild(counter("ink",SAVE.ink));
+  bar.appendChild(counter("seed",SAVE.seeds));
+  c.appendChild(bar);
+  const btn=ibtn("play",()=>{ stopAuto(); if(SAVE.hearts<=0){Snd.no();return;}
+    Snd.init(); warmTTS(); scrPlay(); },"big");
+  btn.id="startBtn"; c.appendChild(btn);
+  /* 공용 표준 — 아무것도 안 눌러도 3초 뒤 자동 시작. ⚙를 열면 멈춘다 */
+  const AUTO_MS=3000;
+  let autoId=0;
+  const ab=H("div",{class:"autobar",id:"autobar"}); ab.appendChild(H("i"));
+  function stopAuto(){ if(autoId){clearTimeout(autoId); autoId=0;} ab.classList.add("stop"); }
+  if(SAVE.hearts>0){
+    c.appendChild(ab);
+    autoId=later(()=>{ autoId=0; if(SCREEN==="title"&&SAVE.hearts>0){Snd.init(); warmTTS(); scrPlay();} },
+      Math.round(AUTO_MS*(SAVE.set.motion?1:.3)));
+  }
+  const rw=H("div",{class:"radarSmall"}); rw.appendChild(radarSVG(SAVE.stat)); c.appendChild(rw);
+  const gear=ibtn("gear",()=>{ stopAuto(); parentPanel(); }); gear.className="ib corner"; c.appendChild(gear);
+  const hm=ibtn("home",()=>{ stopAuto(); location.href="index.html"; });
+  hm.className="ib corner cornerL"; hm.id="titleHome"; c.appendChild(hm);
+  app.appendChild(c);
+}
+/* v0.7 ⑨(사용자 지시) — 퍼펙트 단어 = Candy Crush식 연쇄 팡팡 */
+function cascadeFX(sky,fw,fh){
+  const COLS=["#FFCE5C","#FF8A8A","#7BE3B6","#8CC8EE","#F79FC4","#C9A8F0"];
+  const sh=H("div",{class:"perfshout"}); sh.appendChild(shoutNode("PERFECT!","#FFD45C"));
+  sky.appendChild(sh); later(()=>sh.remove(),1300);
+  for(let i=0;i<11;i++){
+    later(()=>{
+      if(!sky.parentNode)return;
+      const p=H("div",{class:"cascpop"});
+      p.style.left=(fw*(.10+.80*Math.random())).toFixed(0)+"px";
+      p.style.top=(fh*(.14+.62*Math.random())).toFixed(0)+"px";
+      p.style.setProperty("--c",COLS[i%COLS.length]);
+      sky.appendChild(p); later(()=>p.remove(),780);
+      Snd.t(500+i*75,.09,"triangle",.12);
+      if(i%3===2)Snd.t(240+i*40,.14,"sine",.08);
+    },90*i);
+  }
+  later(()=>Cue2.gold(),1050);
+}
+/* v0.7 ④⑥⑩(사용자 지시) — 결과 = 단어 통계(그림+O/X) + 60% 게이트 + 총점 카운트업. 별표 폐지 */
+function scrResult(win,score,log){
+  clearAll(); SCREEN="result";
+  if(score>SAVE.best){SAVE.best=score;persist();}
+  log=log||[];
+  const okN=log.filter(x=>x.ok).length, tot=Math.max(1,log.length);
+  const pct=Math.round(okN/tot*100), pass=okN/tot>=.6;
+  const c=H("div",{class:"center"});
+  const card=H("div",{class:"card"});
+  card.appendChild(shoutNode(pass?"STAGE CLEAR!":"ALMOST!",pass?"#7BE3B6":"#FFB37A"));
+  const grid=H("div",{class:"wstat"});
+  log.forEach(x=>{
+    const wc=H("div",{class:"wcard "+(x.ok?"ok":"no")});
+    const ic=H("div",{class:"wic"}); ic.appendChild(partIcon(x.k)); wc.appendChild(ic);
+    wc.appendChild(H("div",{class:"wname",text:x.w}));
+    wc.appendChild(H("div",{class:"wbadge "+(x.ok?"ok":"no"),text:x.ok?"\u2713":"\u2717"}));
+    if(x.perfect)wc.appendChild(H("div",{class:"wperf",text:"PERFECT"}));
+    grid.appendChild(wc);
+  });
+  card.appendChild(grid);
+  card.appendChild(H("div",{class:"stPct",text:okN+" / "+log.length+" \u00b7 "+pct+"%"}));
+  const okL=log.filter(x=>x.ok);
+  const accB=okN*40;
+  const refB=okL.reduce((a,x)=>a+Math.max(0,Math.round((16000-Math.min(16000,x.ms||16000))/400)),0);
+  const total=(score||0)+accB+refB;
+  const row0=H("div",{class:"stBonus"});
+  row0.appendChild(H("span",{class:"bchip",text:"SCORE "+(score||0)}));
+  row0.appendChild(H("span",{class:"bchip acc",text:"ACCURACY +"+accB}));
+  row0.appendChild(H("span",{class:"bchip ref",text:"SPEED +"+refB}));
+  card.appendChild(row0);
+  const big=H("b",{class:"num",id:"bigscore",style:"font-size:2.2rem",text:"0"});
+  card.appendChild(H("div",{class:"cnt",style:"font-size:1.2rem"},[icoSVG("score"),big]));
+  const row=H("div",{style:"display:flex;gap:12px;align-items:center"});
+  row.appendChild(ibtn("home",()=>{location.href="index.html";}));
+  const nsW=H("div",{class:"nsWrap"+(pass?"":" dis"),id:"nsWrap"});
+  nsW.appendChild(H("div",{class:"nsLab",text:"NEXT STAGE"}));
+  const nb=H("button",{class:"bigbtn",id:"nextStageBtn",on:{click:()=>{ if(!pass||SAVE.hearts<=0){Snd.no();return;}
+    SAVE.stage=(SAVE.stage||1)+1; persist(); Snd.init(); scrPlay(); }}},[icoSVG("play")]);
+  nsW.appendChild(nb); row.appendChild(nsW);
+  if(SAVE.hearts>0)
+    row.appendChild(H("button",{class:"bigbtn",id:"replayBtn",on:{click:()=>{Snd.init();scrPlay();}}},[icoSVG("replay")]));
+  card.appendChild(row);
+  c.appendChild(card); app.appendChild(c);
+  if(pass){ Cue2.fanfare();
+    later(()=>{const r2=c.getBoundingClientRect(); winFX(c,r2.width/2,r2.height*.3,true);},250); }
+  /* ⑩ 총점이 틱 사운드와 함께 차오른다(정확도·반응속도 보너스 합산) */
+  const DUR=1600, t0=performance.now(); let lastTick=0, fin=false;
+  window.__TALLY={total:total,acc:accB,ref:refB,pass:pass,pct:pct,done:false};
+  (function roll(now){
+    if(SCREEN!=="result"||fin)return;
+    const p=Math.min(1,(now-t0)/DUR), e=1-Math.pow(1-p,3);
+    big.textContent=String(Math.round(total*e));
+    if(now-lastTick>70){ lastTick=now; Snd.t(560+920*e,.03,"square",.05); }
+    if(p>=1){ fin=true; big.textContent=String(total); window.__TALLY.done=true;
+      if(pass)Cue2.fanfare(); else Cue2.beat(); return; }
+    requestAnimationFrame(roll);
+  })(performance.now());
+}
+
+/* ====================== 추가 상태 CSS ====================== */
+const extra=document.createElement("style");
+extra.textContent=`
+.pal .anig{transform-box:fill-box;transform-origin:50% 96%;animation:idle5 3.2s ease-in-out infinite}
+@keyframes idle5{50%{transform:translateY(-3px) rotate(1.4deg)}}
+.pal.pop .anig{animation:pop5 .42s ease-out}
+@keyframes pop5{40%{transform:translateY(-9px) scale(1.06)}}
+body.nomotion .pal .anig{animation:none}`;
+document.head.appendChild(extra);
+
+applySet();
+scrTitle();
+</script>
+</body>
+</html>
